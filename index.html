@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Apex Racer</title>
+    <title>Happy Birthday Billyjoe! 🎉</title>
     <style>
         * {
             box-sizing: border-box;
@@ -13,465 +13,430 @@
         }
 
         body {
-            overflow: hidden;
-            background-color: #050505;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
+            color: #ffffff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-        #canvas-container {
-            width: 100vw;
-            height: 100vh;
-        }
-
-        /* Modern UI Overlay */
-        #hud {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #fff;
+            min-height: 100vh;
             display: flex;
-            gap: 20px;
-            pointer-events: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            overflow-x: hidden;
+            position: relative;
+            padding: 20px;
         }
 
-        .hud-card {
+        /* Confetti Canvas */
+        #confetti-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Floating Balloons */
+        .balloon-container {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        .balloon {
+            position: absolute;
+            bottom: -120px;
+            width: 50px;
+            height: 65px;
+            border-radius: 50% 50% 50% 50% / 40% 40% 60% 60%;
+            animation: floatUp 12s infinite ease-in;
+            opacity: 0.8;
+        }
+
+        .balloon::after {
+            content: "";
+            position: absolute;
+            bottom: -12px;
+            left: 23px;
+            width: 2px;
+            height: 15px;
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        @keyframes floatUp {
+            0% { transform: translateY(0) rotate(0deg); opacity: 0.8; }
+            100% { transform: translateY(-120vh) rotate(20deg); opacity: 0; }
+        }
+
+        /* Hero Header */
+        header {
+            text-align: center;
+            margin-top: 30px;
+            z-index: 2;
+        }
+
+        .bday-title {
+            font-size: clamp(2.5rem, 8vw, 4.5rem);
+            font-weight: 900;
+            background: linear-gradient(45deg, #ff007f, #ffaa00, #00f0ff, #7000ff);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: rainbowGradient 6s ease infinite;
+            text-shadow: 0 10px 30px rgba(255, 0, 127, 0.3);
+            margin-bottom: 10px;
+        }
+
+        @keyframes rainbowGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            color: #cbd5e1;
+            margin-bottom: 25px;
+        }
+
+        /* Main Content Grid */
+        .content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 40px;
+            z-index: 2;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        /* Cake Section */
+        .cake-card {
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 15px 25px;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-        }
-
-        .hud-label {
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: #888;
-        }
-
-        .hud-value {
-            font-size: 32px;
-            font-weight: 800;
-            font-style: italic;
-            background: linear-gradient(45deg, #ff0055, #ff9900);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        /* Game Over Screen */
-        #game-over {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(8px);
+            border-radius: 24px;
+            padding: 30px;
+            width: 100%;
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
-            color: white;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+
+        .cake-instructions {
+            font-size: 0.95rem;
+            color: #fbbf24;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        /* SVG Cake Styling */
+        .cake-svg {
+            width: 200px;
+            height: 200px;
+            cursor: pointer;
+        }
+
+        .flame {
+            fill: #ffaa00;
+            transform-origin: center bottom;
+            animation: flicker 0.6s infinite alternate ease-in-out;
+            transition: opacity 0.3s;
+        }
+
+        .flame.out {
             opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.5s ease;
         }
 
-        #game-over.active {
+        @keyframes flicker {
+            0% { transform: scale(1) rotate(-2deg); fill: #ffaa00; }
+            100% { transform: scale(1.15) rotate(2deg); fill: #ff3300; }
+        }
+
+        /* Gift Section */
+        .gift-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 30px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+
+        .gift-box {
+            font-size: 80px;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+            display: inline-block;
+            margin: 15px 0;
+        }
+
+        .gift-box:hover {
+            transform: scale(1.15) rotate(5deg);
+        }
+
+        .message-box {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.8s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s ease;
+            opacity: 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 0 20px;
+        }
+
+        .message-box.open {
+            max-height: 300px;
             opacity: 1;
-            pointer-events: auto;
+            padding: 20px;
+            margin-top: 15px;
+            border: 1px solid rgba(255, 204, 0, 0.3);
         }
 
-        #game-over h1 {
-            font-size: 64px;
-            font-weight: 900;
-            letter-spacing: 4px;
-            margin-bottom: 10px;
-            color: #ff0055;
-            text-shadow: 0 0 20px rgba(255,0,85,0.5);
+        .message-text {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #f1f5f9;
         }
 
-        #game-over p {
-            font-size: 20px;
-            color: #aaa;
-            margin-bottom: 30px;
+        /* Action Buttons */
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 10px;
+            z-index: 2;
         }
 
         .btn {
-            background: linear-gradient(45deg, #ff0055, #ff5500);
+            background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
             border: none;
             color: white;
-            padding: 15px 40px;
-            font-size: 18px;
+            padding: 14px 28px;
+            font-size: 1rem;
             font-weight: bold;
             border-radius: 30px;
             cursor: pointer;
-            box-shadow: 0 0 15px rgba(255,0,85,0.4);
-            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 10px 20px rgba(236, 72, 153, 0.3);
+            transition: all 0.2s ease;
         }
 
         .btn:hover {
-            transform: scale(1.05);
-            box-shadow: 0 0 25px rgba(255,0,85,0.8);
+            transform: translateY(-3px) scale(1.03);
+            box-shadow: 0 15px 25px rgba(236, 72, 153, 0.5);
         }
 
-        #controls-hint {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: rgba(255,255,255,0.5);
-            font-size: 14px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
+        .btn:active {
+            transform: translateY(1px);
         }
     </style>
-    <!-- Three.js Library -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
-    <div id="canvas-container"></div>
+    <canvas id="confetti-canvas"></canvas>
 
-    <div id="hud">
-        <div class="hud-card">
-            <div class="hud-label">Speed</div>
-            <div class="hud-value"><span id="speed-val">0</span> <small style="font-size: 14px">KM/H</small></div>
+    <div class="balloon-container" id="balloon-container"></div>
+
+    <header>
+        <h1 class="bday-title">Happy Birthday, Billyjoe! 🎉</h1>
+        <p class="subtitle">Wishing you a fantastic day filled with joy, laughter, and success!</p>
+    </header>
+
+    <main class="content">
+        <!-- Interactive Birthday Cake -->
+        <div class="cake-card">
+            <div class="cake-instructions" id="cake-status">🔥 Tap the candles to blow them out!</div>
+            
+            <svg class="cake-svg" viewBox="0 0 200 200" id="cake-svg">
+                <!-- Plate -->
+                <ellipse cx="100" cy="170" rx="80" ry="15" fill="#cbd5e1" />
+                
+                <!-- Bottom Layer -->
+                <path d="M 30 130 Q 100 150 170 130 L 170 160 Q 100 180 30 160 Z" fill="#6366f1" />
+                <path d="M 30 130 Q 100 150 170 130 L 170 135 Q 100 155 30 135 Z" fill="#818cf8" />
+                
+                <!-- Middle Layer -->
+                <path d="M 45 95 Q 100 115 155 95 L 155 130 Q 100 150 45 130 Z" fill="#ec4899" />
+                <path d="M 45 95 Q 100 115 155 95 L 155 100 Q 100 120 45 100 Z" fill="#f472b6" />
+                
+                <!-- Frosting Drips -->
+                <path d="M 45 95 Q 60 110 75 98 Q 90 112 105 97 Q 120 112 135 98 Q 148 110 155 95 Q 100 110 45 95 Z" fill="#ffffff" />
+                
+                <!-- Candle 1 (Left) -->
+                <rect x="65" y="60" width="8" height="35" rx="3" fill="#fbbf24" />
+                <path class="flame" id="flame-1" d="M 69 48 Q 75 55 69 60 Q 63 55 69 48 Z" />
+                
+                <!-- Candle 2 (Center) -->
+                <rect x="96" y="55" width="8" height="40" rx="3" fill="#34d399" />
+                <path class="flame" id="flame-2" d="M 100 42 Q 106 49 100 55 Q 94 49 100 42 Z" />
+                
+                <!-- Candle 3 (Right) -->
+                <rect x="127" y="60" width="8" height="35" rx="3" fill="#f472b6" />
+                <path class="flame" id="flame-3" d="M 131 48 Q 137 55 131 60 Q 125 55 131 48 Z" />
+            </svg>
         </div>
-        <div class="hud-card">
-            <div class="hud-label">Score</div>
-            <div class="hud-value" id="score-val">0</div>
+
+        <!-- Interactive Surprise Gift -->
+        <div class="gift-card">
+            <h3>Click the gift to reveal your message! 👇</h3>
+            <div class="gift-box" id="gift-box">🎁</div>
+            <div class="message-box" id="message-box">
+                <p class="message-text">
+                    <strong>Dear Billyjoe,</strong><br><br>
+                    May this year bring you endless opportunities, great health, and unforgettable adventures. Keep shining bright and achieving great things!<br><br>
+                    <strong>Cheers to another amazing year! 🥂🎂</strong>
+                </p>
+            </div>
         </div>
-    </div>
 
-    <div id="controls-hint">Use [A]/[D] or [←]/[→] to Steer | [W]/[↑] Accelerate | [S]/[↓] Brake</div>
-
-    <div id="game-over">
-        <h1>CRASHED</h1>
-        <p>Final Score: <span id="final-score">0</span></p>
-        <button class="btn" onclick="resetGame()">RACE AGAIN</button>
-    </div>
+        <!-- Interactive Buttons -->
+        <div class="btn-group">
+            <button class="btn" id="confetti-btn">Blast Confetti! 🎉</button>
+        </div>
+    </main>
 
     <script>
-        // --- GAME CONFIGURATION & STATE ---
-        const CONFIG = {
-            roadWidth: 14,
-            lanes: 3,
-            maxSpeed: 180,
-            acceleration: 0.8,
-            deceleration: 0.4,
-            brake: 1.2,
-            handling: 0.12,
-            cameraFovBase: 60
-        };
+        /* ===================================================================
+           1. CONFETTI ENGINE
+           =================================================================== */
+        const canvas = document.getElementById('confetti-canvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
 
-        let state = {
-            speed: 0,
-            distance: 0,
-            playerX: 0,
-            targetPlayerX: 0,
-            score: 0,
-            isGameOver: false,
-            keys: { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false, a: false, d: false, w: false, s: false }
-        };
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
-        // --- THREE.JS SETUP ---
-        const container = document.getElementById('canvas-container');
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0a0a10);
-        scene.fog = new THREE.FogExp2(0x0a0a10, 0.015);
-
-        const camera = new THREE.PerspectiveCamera(CONFIG.cameraFovBase, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 3, -6);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        container.appendChild(renderer.domElement);
-
-        // --- LIGHTING ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        scene.add(ambientLight);
-
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(20, 40, -20);
-        dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 2048;
-        dirLight.shadow.mapSize.height = 2048;
-        scene.add(dirLight);
-
-        // Subtle dynamic point lights for modern aesthetic
-        const lightBlue = new THREE.PointLight(0x00d2ff, 1, 50);
-        lightBlue.position.set(-10, 5, 20);
-        scene.add(lightBlue);
-
-        // --- PROCEDURAL TEXTURES ---
-        function createRoadTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-
-            ctx.fillStyle = '#1a1a1a';
-            ctx.fillRect(0, 0, 512, 512);
-
-            // Dash lines
-            ctx.fillStyle = '#ffffff';
-            for (let i = 0; i < 512; i += 64) {
-                ctx.fillRect(168, i + 16, 8, 32);
-                ctx.fillRect(336, i + 16, 8, 32);
+        class Particle {
+            constructor(x, y) {
+                this.x = x || Math.random() * canvas.width;
+                this.y = y || -10;
+                this.size = Math.random() * 8 + 4;
+                this.color = ['#ff007f', '#ffaa00', '#00f0ff', '#7000ff', '#2ecc71', '#f1c40f'][Math.floor(Math.random() * 6)];
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = Math.random() * 3 + 2;
+                this.rotation = Math.random() * Math.PI * 2;
+                this.vRot = (Math.random() - 0.5) * 0.2;
             }
 
-            // Side lines
-            ctx.fillRect(10, 0, 12, 512);
-            ctx.fillRect(490, 0, 12, 512);
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.rotation += this.vRot;
+                if (this.y > canvas.height) {
+                    this.y = -10;
+                    this.x = Math.random() * canvas.width;
+                }
+            }
 
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
-            texture.repeat.set(1, 20);
-            return texture;
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                ctx.fillStyle = this.color;
+                ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+                ctx.restore();
+            }
         }
 
-        // --- ENVIRONMENT & ROAD ---
-        const roadTexture = createRoadTexture();
-        const roadGeo = new THREE.PlaneGeometry(CONFIG.roadWidth, 400);
-        const roadMat = new THREE.MeshStandardMaterial({ map: roadTexture, roughness: 0.8 });
-        const road = new THREE.Mesh(roadGeo, roadMat);
-        road.rotation.x = -Math.PI / 2;
-        road.position.z = 180;
-        road.receiveShadow = true;
-        scene.add(road);
+        function triggerConfetti(count = 70) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(canvas.width / 2, canvas.height / 3));
+            }
+        }
 
-        // Grass/Terrain Side Planes
-        const terrainGeo = new THREE.PlaneGeometry(200, 400);
-        const terrainMat = new THREE.MeshStandardMaterial({ color: 0x051105, roughness: 1 });
-        
-        const leftTerrain = new THREE.Mesh(terrainGeo, terrainMat);
-        leftTerrain.rotation.x = -Math.PI / 2;
-        leftTerrain.position.set(-107, -0.01, 180);
-        scene.add(leftTerrain);
+        // Initialize background confetti
+        for (let i = 0; i < 50; i++) {
+            particles.push(new Particle());
+        }
 
-        const rightTerrain = new THREE.Mesh(terrainGeo, terrainMat);
-        rightTerrain.rotation.x = -Math.PI / 2;
-        rightTerrain.position.set(107, -0.01, 180);
-        scene.add(rightTerrain);
-
-        // --- CAR CREATOR (PROCEDURAL MESHES) ---
-        function createCarMesh(color = 0xff0055) {
-            const carGroup = new THREE.Group();
-
-            // Main Body
-            const bodyGeo = new THREE.BoxGeometry(1.6, 0.6, 3.6);
-            const bodyMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.3, metalness: 0.4 });
-            const body = new THREE.Mesh(bodyGeo, bodyMat);
-            body.position.y = 0.5;
-            body.castShadow = true;
-            carGroup.add(body);
-
-            // Cabin / Windows
-            const cabinGeo = new THREE.BoxGeometry(1.3, 0.45, 1.8);
-            const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.9 });
-            const cabin = new THREE.Mesh(cabinGeo, cabinMat);
-            cabin.position.set(0, 0.9, -0.2);
-            cabin.castShadow = true;
-            carGroup.add(cabin);
-
-            // Headlights
-            const lightGeo = new THREE.BoxGeometry(0.3, 0.1, 0.1);
-            const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            const leftLight = new THREE.Mesh(lightGeo, lightMat);
-            leftLight.position.set(-0.6, 0.5, 1.8);
-            const rightLight = leftLight.clone();
-            rightLight.position.x = 0.6;
-            carGroup.add(leftLight, rightLight);
-
-            // Taillights
-            const tailMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-            const leftTail = new THREE.Mesh(lightGeo, tailMat);
-            leftTail.position.set(-0.6, 0.5, -1.8);
-            const rightTail = leftTail.clone();
-            rightTail.position.x = 0.6;
-            carGroup.add(leftTail, rightTail);
-
-            // Wheels
-            const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 16);
-            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
-            wheelGeo.rotateZ(Math.PI / 2);
-
-            const wheelPositions = [
-                [-0.85, 0.3, 1.1], [0.85, 0.3, 1.1],
-                [-0.85, 0.3, -1.1], [0.85, 0.3, -1.1]
-            ];
-
-            wheelPositions.forEach(pos => {
-                const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-                wheel.position.set(...pos);
-                wheel.castShadow = true;
-                carGroup.add(wheel);
+        function animateConfetti() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
             });
+            requestAnimationFrame(animateConfetti);
+        }
+        animateConfetti();
 
-            return carGroup;
+        document.getElementById('confetti-btn').addEventListener('click', () => triggerConfetti(80));
+
+        /* ===================================================================
+           2. FLOATING BALLOONS GENERATOR
+           =================================================================== */
+        const balloonContainer = document.getElementById('balloon-container');
+        const balloonColors = ['#ff007f', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
+
+        function createBalloon() {
+            const balloon = document.createElement('div');
+            balloon.className = 'balloon';
+            balloon.style.left = Math.random() * 90 + 'vw';
+            balloon.style.backgroundColor = balloonColors[Math.floor(Math.random() * balloonColors.length)];
+            balloon.style.animationDuration = (Math.random() * 6 + 8) + 's';
+            balloonContainer.appendChild(balloon);
+
+            setTimeout(() => {
+                balloon.remove();
+            }, 14000);
         }
 
-        // Initialize Player Car
-        const playerCar = createCarMesh(0x0066ff);
-        scene.add(playerCar);
+        setInterval(createBalloon, 1200);
+        for(let i = 0; i < 5; i++) createBalloon();
 
-        // --- TRAFFIC SYSTEM ---
-        const trafficCars = [];
-        const carColors = [0xff0055, 0xffaa00, 0x00ff66, 0x9900ff, 0xffffff];
-        const laneXPositions = [-4.5, 0, 4.5];
+        /* ===================================================================
+           3. CANDLE BLOWING INTERACTION
+           =================================================================== */
+        const flames = [
+            document.getElementById('flame-1'),
+            document.getElementById('flame-2'),
+            document.getElementById('flame-3')
+        ];
+        let litCandles = 3;
 
-        function spawnTraffic() {
-            for (let i = 0; i < 5; i++) {
-                const color = carColors[Math.floor(Math.random() * carColors.length)];
-                const trafficMesh = createCarMesh(color);
-                
-                // Random position ahead
-                const lane = laneXPositions[Math.floor(Math.random() * laneXPositions.length)];
-                const zPos = 50 + i * 40 + Math.random() * 20;
-                
-                trafficMesh.position.set(lane, 0, zPos);
-                scene.add(trafficMesh);
-                trafficCars.push(trafficMesh);
-            }
-        }
-        spawnTraffic();
+        document.getElementById('cake-svg').addEventListener('click', () => {
+            if (litCandles > 0) {
+                litCandles--;
+                flames[litCandles].classList.add('out');
+                triggerConfetti(30);
 
-        // --- CONTROLS ---
-        window.addEventListener('keydown', (e) => { if (e.key in state.keys) state.keys[e.key] = true; });
-        window.addEventListener('keyup', (e) => { if (e.key in state.keys) state.keys[e.key] = false; });
-
-        // --- COLLISION DETECTION ---
-        const playerBox = new THREE.Box3();
-        const trafficBox = new THREE.Box3();
-
-        function checkCollisions() {
-            // Shrink bounding box slightly for forgiving gameplay feel
-            playerBox.setFromObject(playerCar);
-            playerBox.expandByScalar(-0.2); 
-
-            for (let car of trafficCars) {
-                trafficBox.setFromObject(car);
-                trafficBox.expandByScalar(-0.2);
-
-                if (playerBox.intersectsBox(trafficBox)) {
-                    gameOver();
-                    break;
+                if (litCandles === 0) {
+                    document.getElementById('cake-status').innerText = "🥳 Make a wish! All candles blown out!";
+                    document.getElementById('cake-status').style.color = "#34d399";
+                    triggerConfetti(120);
                 }
             }
-        }
-
-        function gameOver() {
-            state.isGameOver = true;
-            document.getElementById('final-score').innerText = Math.floor(state.score);
-            document.getElementById('game-over').classList.add('active');
-        }
-
-        function resetGame() {
-            state.isGameOver = false;
-            state.speed = 0;
-            state.distance = 0;
-            state.score = 0;
-            state.playerX = 0;
-            playerCar.position.set(0, 0, 0);
-            playerCar.rotation.set(0,0,0);
-
-            // Reposition Traffic
-            trafficCars.forEach((car, index) => {
-                const lane = laneXPositions[Math.floor(Math.random() * laneXPositions.length)];
-                car.position.set(lane, 0, 50 + index * 40);
-            });
-
-            document.getElementById('game-over').classList.remove('active');
-        }
-
-        // --- MAIN GAME LOOP ---
-        let clock = new THREE.Clock();
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            const delta = clock.getDelta();
-
-            if (!state.isGameOver) {
-                // 1. Handle Acceleration / Braking
-                if (state.keys.ArrowUp || state.keys.w) {
-                    state.speed = Math.min(CONFIG.maxSpeed, state.speed + CONFIG.acceleration);
-                } else if (state.keys.ArrowDown || state.keys.s) {
-                    state.speed = Math.max(0, state.speed - CONFIG.brake);
-                } else {
-                    state.speed = Math.max(0, state.speed - CONFIG.deceleration);
-                }
-
-                // Auto forward crawl so the player doesn't complete standstill easily
-                if (state.speed < 10) state.speed += 0.1;
-
-                // 2. Handle Steering
-                if (state.keys.ArrowLeft || state.keys.a) {
-                    state.targetPlayerX -= CONFIG.handling;
-                }
-                if (state.keys.ArrowRight || state.keys.d) {
-                    state.targetPlayerX += CONFIG.handling;
-                }
-
-                // Clamp steering to road edges
-                state.targetPlayerX = Math.max(-5.8, Math.min(5.8, state.targetPlayerX));
-                
-                // Smooth movement & Car Roll Dynamic
-                state.playerX += (state.targetPlayerX - state.playerX) * 0.1;
-                playerCar.position.x = state.playerX;
-                playerCar.rotation.z = -(state.targetPlayerX - state.playerX) * 0.3; // Lean into turns
-                playerCar.rotation.y = -(state.targetPlayerX - state.playerX) * 0.1;
-
-                // 3. Environment Movement (Simulating Forward Motion)
-                const speedFactor = (state.speed / 3.6) * delta; // Speed in m/s
-                roadTexture.offset.y -= speedFactor * 0.05;
-
-                // Move Traffic Cars towards player
-                trafficCars.forEach(car => {
-                    car.position.z -= speedFactor * 0.6; // Traffic moves slower than max player speed
-
-                    // Respawn car behind horizon if passed
-                    if (car.position.z < -10) {
-                        car.position.z = 150 + Math.random() * 30;
-                        car.position.x = laneXPositions[Math.floor(Math.random() * laneXPositions.length)];
-                    }
-                });
-
-                // 4. Update Stats & UI
-                state.distance += speedFactor;
-                state.score += (state.speed * 0.05);
-
-                document.getElementById('speed-val').innerText = Math.floor(state.speed);
-                document.getElementById('score-val').innerText = Math.floor(state.score);
-
-                // 5. Dynamic Camera FX (FOV & Shake based on speed)
-                camera.fov = CONFIG.cameraFovBase + (state.speed / CONFIG.maxSpeed) * 15;
-                camera.updateProjectionMatrix();
-
-                camera.position.x = playerCar.position.x * 0.3; // Slight camera lag behind car turn
-                camera.position.y = 3 + (Math.random() * (state.speed / CONFIG.maxSpeed) * 0.03); // Speed Shake
-
-                // 6. Check Collisions
-                checkCollisions();
-            }
-
-            renderer.render(scene, camera);
-        }
-
-        // --- RESIZE HANDLER ---
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // Start Game Loop
-        animate();
+        /* ===================================================================
+           4. GIFT BOX OPENING INTERACTION
+           =================================================================== */
+        const giftBox = document.getElementById('gift-box');
+        const messageBox = document.getElementById('message-box');
+        let isOpen = false;
+
+        giftBox.addEventListener('click', () => {
+            isOpen = !isOpen;
+            if (isOpen) {
+                giftBox.innerText = '🎈';
+                messageBox.classList.add('open');
+                triggerConfetti(60);
+            } else {
+                giftBox.innerText = '🎁';
+                messageBox.classList.remove('open');
+            }
+        });
     </script>
 </body>
 </html>
