@@ -1,0 +1,1087 @@
+!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Royal Match - Match 3 Puzzle Engine</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background: #1a1a2e;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #ui-header {
+            width: 100%;
+            background: linear-gradient(180deg, #2a2a4e 0%, #1a1a2e 100%);
+            border-bottom: 3px solid #ffcc00;
+            border-radius: 12px 12px 0 0;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+        .ui-card {
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(255, 204, 0, 0.5);
+            border-radius: 8px;
+            padding: 6px 12px;
+            text-align: center;
+            min-width: 90px;
+        }
+        .ui-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #aaa;
+            letter-spacing: 1px;
+        }
+        .ui-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ffcc00;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+        #targets-container {
+            display: flex;
+            gap: 10px;
+        }
+        .target-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .target-icon {
+            width: 28px;
+            height: 28px;
+        }
+        #canvas-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.7);
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: #0f0f1d;
+        }
+        .modal {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .modal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-card {
+            background: linear-gradient(135deg, #2c3e50, #3498db);
+            border: 4px solid #f1c40f;
+            border-radius: 16px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 0 30px rgba(241, 196, 15, 0.5);
+            max-width: 80%;
+        }
+        .modal-title {
+            font-size: 32px;
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 10px;
+            text-shadow: 0 3px 6px rgba(0,0,0,0.5);
+        }
+        .modal-subtitle {
+            font-size: 16px;
+            color: #f1c40f;
+            margin-bottom: 20px;
+        }
+        .btn {
+            background: linear-gradient(180deg, #2ecc71 0%, #27ae60 100%);
+            border: none;
+            color: white;
+            padding: 12px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(46, 204, 113, 0.4);
+            transition: transform 0.1s, background 0.2s;
+        }
+        .btn:hover {
+            transform: scale(1.05);
+        }
+        .btn:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="ui-header">
+        <div class="ui-card">
+            <div class="ui-title">Moves</div>
+            <div id="moves-count" class="ui-value">22</div>
+        </div>
+        
+        <div class="ui-card">
+            <div class="ui-title">Objectives</div>
+            <div id="targets-container"></div>
+        </div>
+
+        <div class="ui-card">
+            <div class="ui-title">Score</div>
+            <div id="score-count" class="ui-value">0</div>
+        </div>
+    </div>
+
+    <div id="canvas-wrapper">
+        <canvas id="gameCanvas" width="600" height="600"></canvas>
+        
+        <div id="game-modal" class="modal">
+            <div class="modal-card">
+                <div id="modal-title" class="modal-title">VICTORY!</div>
+                <div id="modal-subtitle" class="modal-subtitle">Level Complete!</div>
+                <button id="restart-btn" class="btn">PLAY AGAIN</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * ROYAL MATCH MATCH-3 ENGINE
+ * Fully modular HTML5 Canvas Architecture
+ */
+
+// ============================================================================
+// CONSTANTS & ENUMS
+// ============================================================================
+const GRID_SIZE = 8;
+const ANIM_SPEED = 0.18; // Interpolation speed
+
+const PIECE_TYPES = {
+    HEART: 'HEART',   // Red
+    SHIELD: 'SHIELD', // Blue
+    BOOK: 'BOOK',     // Green
+    CROWN: 'CROWN',   // Yellow
+    GEM: 'GEM'        // Purple
+};
+
+const BOOSTERS = {
+    NONE: 'NONE',
+    ROCKET_H: 'ROCKET_H',
+    ROCKET_V: 'ROCKET_V',
+    PROPELLER: 'PROPELLER',
+    TNT: 'TNT',
+    LIGHT_BALL: 'LIGHT_BALL'
+};
+
+const COLORS = {
+    [PIECE_TYPES.HEART]: '#e74c3c',
+    [PIECE_TYPES.SHIELD]: '#3498db',
+    [PIECE_TYPES.BOOK]: '#2ecc71',
+    [PIECE_TYPES.CROWN]: '#f1c40f',
+    [PIECE_TYPES.GEM]: '#9b59b6'
+};
+
+// ============================================================================
+// PARTICLE ENGINE
+// ============================================================================
+class ParticleSystem {
+    constructor() {
+        this.particles = [];
+        this.projectiles = [];
+    }
+
+    addSparkles(x, y, color, count = 12) {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 2 + Math.random() * 6;
+            this.particles.push({
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 3 + Math.random() * 5,
+                color: color,
+                alpha: 1,
+                decay: 0.02 + Math.random() * 0.03
+            });
+        }
+    }
+
+    addExplosion(x, y, radius = 40) {
+        for (let i = 0; i < 30; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 3 + Math.random() * 8;
+            this.particles.push({
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 4 + Math.random() * 8,
+                color: Math.random() > 0.5 ? '#e67e22' : '#f1c40f',
+                alpha: 1,
+                decay: 0.02
+            });
+        }
+    }
+
+    addPropellerProjectile(startX, startY, targetX, targetY, onHit) {
+        this.projectiles.push({
+            x: startX, y: startY,
+            startX, startY,
+            targetX, targetY,
+            progress: 0,
+            speed: 0.03,
+            onHit
+        });
+    }
+
+    update() {
+        // Particles
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            let p = this.particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.alpha -= p.decay;
+            if (p.alpha <= 0) this.particles.splice(i, 1);
+        }
+
+        // Propeller Guided Projectiles
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+            let p = this.projectiles[i];
+            p.progress += p.speed;
+            
+            // Bezier curve height offset
+            const midX = (p.startX + p.targetX) / 2;
+            const midY = (p.startY + p.targetY) / 2 - 100;
+
+            const t = p.progress;
+            p.x = (1 - t) * (1 - t) * p.startX + 2 * (1 - t) * t * midX + t * t * p.targetX;
+            p.y = (1 - t) * (1 - t) * p.startY + 2 * (1 - t) * t * midY + t * t * p.targetY;
+
+            this.addSparkles(p.x, p.y, '#00ffff', 1);
+
+            if (p.progress >= 1) {
+                if (p.onHit) p.onHit();
+                this.addExplosion(p.targetX, p.targetY, 20);
+                this.projectiles.splice(i, 1);
+            }
+        }
+    }
+
+    draw(ctx) {
+        ctx.save();
+        for (let p of this.particles) {
+            ctx.globalAlpha = p.alpha;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        for (let p of this.projectiles) {
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#00ffff';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+}
+
+// ============================================================================
+// PIECE CLASS
+// ============================================================================
+class Piece {
+    constructor(row, col, type, booster = BOOSTERS.NONE) {
+        this.row = row;
+        this.col = col;
+        this.type = type;
+        this.booster = booster;
+        
+        // Animation Interpolation Properties
+        this.x = col;
+        this.y = row;
+        this.scale = 1.0;
+        this.alpha = 1.0;
+        
+        // Crate Obstacle logic
+        this.isCrate = false;
+        this.crateHP = 0;
+    }
+
+    static createCrate(row, col, hp = 1) {
+        let p = new Piece(row, col, null);
+        p.isCrate = true;
+        p.crateHP = hp;
+        return p;
+    }
+
+    updatePosition(dt) {
+        this.x += (this.col - this.x) * ANIM_SPEED;
+        this.y += (this.row - this.y) * ANIM_SPEED;
+    }
+
+    isAnimating() {
+        return Math.abs(this.x - this.col) > 0.01 || Math.abs(this.y - this.row) > 0.01 || this.scale < 0.99;
+    }
+}
+
+// ============================================================================
+// BOARD ENGINE
+// ============================================================================
+class Board {
+    constructor(game) {
+        this.game = game;
+        this.grid = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null));
+        this.cellSize = 0;
+        this.init();
+    }
+
+    init() {
+        // Fill initial grid cleanly without existing 3-in-a-row matches
+        const types = Object.values(PIECE_TYPES);
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let validTypes = [...types];
+                if (r >= 2 && this.grid[r-1][c]?.type === this.grid[r-2][c]?.type) {
+                    validTypes = validTypes.filter(t => t !== this.grid[r-1][c].type);
+                }
+                if (c >= 2 && this.grid[r][c-1]?.type === this.grid[r][c-2]?.type) {
+                    validTypes = validTypes.filter(t => t !== this.grid[r][c-1].type);
+                }
+                const chosenType = validTypes[Math.floor(Math.random() * validTypes.length)];
+                this.grid[r][c] = new Piece(r, c, chosenType);
+            }
+        }
+
+        // Spawn initial objective crates
+        const cratePositions = [
+            [3, 3], [3, 4], [4, 3], [4, 4],
+            [2, 2], [2, 5], [5, 2], [5, 5]
+        ];
+        cratePositions.forEach(([r, c]) => {
+            this.grid[r][c] = Piece.createCrate(r, c, 1);
+        });
+    }
+
+    getPiece(r, c) {
+        if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) return null;
+        return this.grid[r][c];
+    }
+
+    swap(r1, c1, r2, c2) {
+        let p1 = this.grid[r1][c1];
+        let p2 = this.grid[r2][c2];
+
+        if (!p1 || !p2 || p1.isCrate || p2.isCrate) return false;
+
+        this.grid[r1][c1] = p2;
+        this.grid[r2][c2] = p1;
+
+        p1.row = r2; p1.col = c2;
+        p2.row = r1; p2.col = c1;
+
+        return true;
+    }
+
+    // High-level solver logic: matches, shapes, and booster generation
+    findMatches() {
+        let matchedCells = new Set();
+        let boosterCreations = []; // {row, col, boosterType, color}
+
+        // Track horizontal & vertical runs
+        let hRuns = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(1));
+        let vRuns = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(1));
+
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let current = this.grid[r][c];
+                if (!current || current.isCrate) continue;
+
+                if (c > 0 && this.grid[r][c-1] && this.grid[r][c-1].type === current.type && !this.grid[r][c-1].isCrate) {
+                    hRuns[r][c] = hRuns[r][c-1] + 1;
+                }
+                if (r > 0 && this.grid[r-1][c] && this.grid[r-1][c].type === current.type && !this.grid[r-1][c].isCrate) {
+                    vRuns[r][c] = vRuns[r-1][c] + 1;
+                }
+            }
+        }
+
+        // Collect matches & Booster formations backwards
+        let processedH = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(false));
+        let processedV = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(false));
+
+        for (let r = GRID_SIZE - 1; r >= 0; r--) {
+            for (let c = GRID_SIZE - 1; c >= 0; c--) {
+                let piece = this.grid[r][c];
+                if (!piece || piece.isCrate) continue;
+
+                let hLen = hRuns[r][c];
+                let vLen = vRuns[r][c];
+
+                // 1. Light Ball (5 in a straight line)
+                if ((hLen >= 5 && !processedH[r][c]) || (vLen >= 5 && !processedV[r][c])) {
+                    boosterCreations.push({ r, c, booster: BOOSTERS.LIGHT_BALL, type: piece.type });
+                }
+                // 2. TNT (L / T Shape or 5+ combined intersection)
+                else if (hLen >= 3 && vLen >= 3) {
+                    boosterCreations.push({ r, c, booster: BOOSTERS.TNT, type: piece.type });
+                }
+                // 3. Rocket (4 in a line)
+                else if (hLen === 4 && !processedH[r][c]) {
+                    boosterCreations.push({ r, c, booster: BOOSTERS.ROCKET_V, type: piece.type }); // Swapped row -> clears col
+                } else if (vLen === 4 && !processedV[r][c]) {
+                    boosterCreations.push({ r, c, booster: BOOSTERS.ROCKET_H, type: piece.type });
+                }
+
+                // Add to general clear list
+                if (hLen >= 3) {
+                    for (let k = 0; k < hLen; k++) {
+                        matchedCells.add(`${r},${c - k}`);
+                        processedH[r][c - k] = true;
+                    }
+                }
+                if (vLen >= 3) {
+                    for (let k = 0; k < vLen; k++) {
+                        matchedCells.add(`${r - k},${c}`);
+                        processedV[r - k][c] = true;
+                    }
+                }
+            }
+        }
+
+        // 4. Propeller (2x2 Square match check)
+        for (let r = 0; r < GRID_SIZE - 1; r++) {
+            for (let c = 0; c < GRID_SIZE - 1; c++) {
+                let p1 = this.grid[r][c];
+                let p2 = this.grid[r+1][c];
+                let p3 = this.grid[r][c+1];
+                let p4 = this.grid[r+1][c+1];
+
+                if (p1 && p2 && p3 && p4 && !p1.isCrate &&
+                    p1.type === p2.type && p1.type === p3.type && p1.type === p4.type) {
+                    
+                    matchedCells.add(`${r},${c}`);
+                    matchedCells.add(`${r+1},${c}`);
+                    matchedCells.add(`${r},${c+1}`);
+                    matchedCells.add(`${r+1},${c+1}`);
+
+                    // Only push Propeller if no bigger booster was already created here
+                    if (!boosterCreations.some(b => b.r === r && b.c === c)) {
+                        boosterCreations.push({ r, c, booster: BOOSTERS.PROPELLER, type: p1.type });
+                    }
+                }
+            }
+        }
+
+        return { matchedCells, boosterCreations };
+    }
+
+    applyGravityAndRefill() {
+        let moved = false;
+
+        // Apply Gravity per Column
+        for (let c = 0; c < GRID_SIZE; c++) {
+            let emptyRows = 0;
+            for (let r = GRID_SIZE - 1; r >= 0; r--) {
+                if (this.grid[r][c] === null) {
+                    emptyRows++;
+                } else if (this.grid[r][c].isCrate) {
+                    emptyRows = 0; // Crates block gravity below them
+                } else if (emptyRows > 0) {
+                    // Drop piece down
+                    let piece = this.grid[r][c];
+                    this.grid[r + emptyRows][c] = piece;
+                    piece.row = r + emptyRows;
+                    this.grid[r][c] = null;
+                    moved = true;
+                }
+            }
+
+            // Spawn new pieces at top
+            for (let r = 0; r < GRID_SIZE; r++) {
+                if (this.grid[r][c] === null) {
+                    let types = Object.values(PIECE_TYPES);
+                    let randomType = types[Math.floor(Math.random() * types.length)];
+                    let newPiece = new Piece(r, c, randomType);
+                    newPiece.y = r - emptyRows - 1; // Offscreen top position for smooth drop
+                    this.grid[r][c] = newPiece;
+                    moved = true;
+                }
+            }
+        }
+        return moved;
+    }
+}
+
+// ============================================================================
+// GAME CONTROLLER & RENDERER
+// ============================================================================
+class Game {
+    constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.particles = new ParticleSystem();
+        this.board = new Board(this);
+
+        this.movesLeft = 22;
+        this.score = 0;
+        this.targets = {
+            [PIECE_TYPES.SHIELD]: 15,
+            CRATE: 8
+        };
+
+        this.selectedTile = null; // {r, c}
+        this.isBusy = false;
+        this.state = 'IDLE'; // IDLE, SWAPPING, MATCHING, FALLING, GAME_OVER
+
+        this.setupInput();
+        this.updateHUD();
+        this.loop = this.loop.bind(this);
+        requestAnimationFrame(this.loop);
+    }
+
+    setupInput() {
+        let startX, startY;
+
+        const handleStart = (clientX, clientY) => {
+            if (this.isBusy || this.state !== 'IDLE') return;
+            const rect = this.canvas.getBoundingClientRect();
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+            const c = Math.floor(x / (rect.width / GRID_SIZE));
+            const r = Math.floor(y / (rect.height / GRID_SIZE));
+
+            if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+                this.selectedTile = { r, c };
+                startX = clientX;
+                startY = clientY;
+            }
+        };
+
+        const handleEnd = (clientX, clientY) => {
+            if (!this.selectedTile || this.isBusy) return;
+
+            const dx = clientX - startX;
+            const dy = clientY - startY;
+            const minSwipe = 20;
+
+            let { r, c } = this.selectedTile;
+            let targetR = r;
+            let targetC = c;
+
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > minSwipe) {
+                targetC += dx > 0 ? 1 : -1;
+            } else if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > minSwipe) {
+                targetR += dy > 0 ? 1 : -1;
+            }
+
+            if (targetR !== r || targetC !== c) {
+                this.tryMove(r, c, targetR, targetC);
+            }
+            this.selectedTile = null;
+        };
+
+        this.canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
+        window.addEventListener('mouseup', e => handleEnd(e.clientX, e.clientY));
+
+        this.canvas.addEventListener('touchstart', e => {
+            handleStart(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: true });
+        window.addEventListener('touchend', e => {
+            if (e.changedTouches.length > 0) {
+                handleEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+            }
+        }, { passive: true });
+
+        document.getElementById('restart-btn').addEventListener('click', () => {
+            location.reload();
+        });
+    }
+
+    async tryMove(r1, c1, r2, c2) {
+        let p1 = this.board.getPiece(r1, c1);
+        let p2 = this.board.getPiece(r2, c2);
+
+        if (!p1 || !p2 || p1.isCrate || p2.isCrate) return;
+
+        this.isBusy = true;
+        this.movesLeft--;
+        this.updateHUD();
+
+        // Perform swap animation
+        this.board.swap(r1, c1, r2, c2);
+        await this.delay(200);
+
+        // Check for Booster Combos!
+        if (p1.booster !== BOOSTERS.NONE && p2.booster !== BOOSTERS.NONE) {
+            await this.triggerBoosterCombo(p1, p2);
+            await this.processCascades();
+            return;
+        }
+
+        // Check Light Ball + Color swap
+        if (p1.booster === BOOSTERS.LIGHT_BALL || p2.booster === BOOSTERS.LIGHT_BALL) {
+            let lightBall = p1.booster === BOOSTERS.LIGHT_BALL ? p1 : p2;
+            let other = p1.booster === BOOSTERS.LIGHT_BALL ? p2 : p1;
+            await this.triggerLightBall(lightBall, other.type);
+            await this.processCascades();
+            return;
+        }
+
+        // Check normal matches
+        let { matchedCells, boosterCreations } = this.board.findMatches();
+
+        if (matchedCells.size === 0) {
+            // Revert swap if no match
+            this.board.swap(r1, c1, r2, c2);
+            this.movesLeft++;
+            this.updateHUD();
+            await this.delay(200);
+            this.isBusy = false;
+        } else {
+            await this.processMatches(matchedCells, boosterCreations);
+            await this.processCascades();
+        }
+    }
+
+    async processMatches(matchedCells, boosterCreations) {
+        // Collect targets and destroy tiles
+        matchedCells.forEach(key => {
+            let [r, c] = key.split(',').map(Number);
+            let p = this.board.grid[r][c];
+            if (p) {
+                // Collect Targets
+                if (this.targets[p.type] !== undefined && this.targets[p.type] > 0) {
+                    this.targets[p.type]--;
+                }
+                this.score += 10;
+
+                // Spawn particles
+                let px = (c + 0.5) * (this.canvas.width / GRID_SIZE);
+                let py = (r + 0.5) * (this.canvas.height / GRID_SIZE);
+                this.particles.addSparkles(px, py, COLORS[p.type] || '#ffffff');
+
+                // Trigger individual boosters if matched
+                if (p.booster !== BOOSTERS.NONE) {
+                    this.triggerSingleBooster(p);
+                }
+
+                // Damage adjacent crates
+                this.damageAdjacentCrates(r, c);
+
+                this.board.grid[r][c] = null;
+            }
+        });
+
+        // Spawn created Boosters
+        boosterCreations.forEach(b => {
+            let piece = new Piece(b.r, b.c, b.type, b.booster);
+            this.board.grid[b.r][b.c] = piece;
+        });
+
+        this.updateHUD();
+        await this.delay(250);
+    }
+
+    damageAdjacentCrates(r, c) {
+        const neighbors = [
+            [r-1, c], [r+1, c], [r, c-1], [r, c+1]
+        ];
+        neighbors.forEach(([nr, nc]) => {
+            let np = this.board.getPiece(nr, nc);
+            if (np && np.isCrate) {
+                np.crateHP--;
+                if (np.crateHP <= 0) {
+                    this.board.grid[nr][nc] = null;
+                    if (this.targets.CRATE > 0) this.targets.CRATE--;
+                    let px = (nc + 0.5) * (this.canvas.width / GRID_SIZE);
+                    let py = (nr + 0.5) * (this.canvas.height / GRID_SIZE);
+                    this.particles.addExplosion(px, py, 30);
+                }
+            }
+        });
+    }
+
+    async triggerSingleBooster(piece) {
+        let r = piece.row;
+        let c = piece.col;
+
+        if (piece.booster === BOOSTERS.ROCKET_H) {
+            for (let i = 0; i < GRID_SIZE; i++) this.clearTile(r, i);
+        } else if (piece.booster === BOOSTERS.ROCKET_V) {
+            for (let i = 0; i < GRID_SIZE; i++) this.clearTile(i, c);
+        } else if (piece.booster === BOOSTERS.TNT) {
+            for (let dr = -1; dr <= 1; dr++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                    this.clearTile(r + dr, c + dc);
+                }
+            }
+        } else if (piece.booster === BOOSTERS.PROPELLER) {
+            this.clearTile(r, c);
+            // Fly to random remaining crate target or piece
+            let target = this.findPropellerTarget();
+            if (target) {
+                let cellS = this.canvas.width / GRID_SIZE;
+                this.particles.addPropellerProjectile(
+                    (c + 0.5) * cellS, (r + 0.5) * cellS,
+                    (target.c + 0.5) * cellS, (target.r + 0.5) * cellS,
+                    () => this.clearTile(target.r, target.c)
+                );
+            }
+        }
+    }
+
+    async triggerBoosterCombo(p1, p2) {
+        const b1 = p1.booster;
+        const b2 = p2.booster;
+
+        // Clear both booster positions
+        this.board.grid[p1.row][p1.col] = null;
+        this.board.grid[p2.row][p2.col] = null;
+
+        let r = p2.row;
+        let c = p2.col;
+
+        // 1. TNT + Rocket -> Clears 3 Rows & 3 Columns
+        if ((b1 === BOOSTERS.TNT && (b2 === BOOSTERS.ROCKET_H || b2 === BOOSTERS.ROCKET_V)) ||
+            (b2 === BOOSTERS.TNT && (b1 === BOOSTERS.ROCKET_H || b1 === BOOSTERS.ROCKET_V))) {
+            for (let offset = -1; offset <= 1; offset++) {
+                for (let i = 0; i < GRID_SIZE; i++) {
+                    this.clearTile(r + offset, i);
+                    this.clearTile(i, c + offset);
+                }
+            }
+        }
+        // 2. TNT + TNT -> Massive 5x5 Explosion
+        else if (b1 === BOOSTERS.TNT && b2 === BOOSTERS.TNT) {
+            for (let dr = -2; dr <= 2; dr++) {
+                for (let dc = -2; dc <= 2; dc++) {
+                    this.clearTile(r + dr, c + dc);
+                }
+            }
+        }
+        // 3. Rocket + Rocket -> Clears Cross (+)
+        else if ((b1 === BOOSTERS.ROCKET_H || b1 === BOOSTERS.ROCKET_V) &&
+                 (b2 === BOOSTERS.ROCKET_H || b2 === BOOSTERS.ROCKET_V)) {
+            for (let i = 0; i < GRID_SIZE; i++) {
+                this.clearTile(r, i);
+                this.clearTile(i, c);
+            }
+        }
+        // 4. Light Ball + Any Booster
+        else if (b1 === BOOSTERS.LIGHT_BALL || b2 === BOOSTERS.LIGHT_BALL) {
+            let targetColor = (p1.type || p2.type);
+            await this.triggerLightBall(p1.booster === BOOSTERS.LIGHT_BALL ? p1 : p2, targetColor);
+        }
+
+        await this.delay(300);
+    }
+
+    async triggerLightBall(lightBallPiece, targetColor) {
+        this.board.grid[lightBallPiece.row][lightBallPiece.col] = null;
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let p = this.board.grid[r][c];
+                if (p && p.type === targetColor) {
+                    this.clearTile(r, c);
+                }
+            }
+        }
+        await this.delay(200);
+    }
+
+    clearTile(r, c) {
+        let p = this.board.getPiece(r, c);
+        if (!p) return;
+
+        if (p.isCrate) {
+            p.crateHP--;
+            if (p.crateHP <= 0) {
+                this.board.grid[r][c] = null;
+                if (this.targets.CRATE > 0) this.targets.CRATE--;
+            }
+        } else {
+            if (this.targets[p.type] !== undefined && this.targets[p.type] > 0) {
+                this.targets[p.type]--;
+            }
+            this.score += 15;
+            let px = (c + 0.5) * (this.canvas.width / GRID_SIZE);
+            let py = (r + 0.5) * (this.canvas.height / GRID_SIZE);
+            this.particles.addExplosion(px, py, 20);
+            this.board.grid[r][c] = null;
+        }
+    }
+
+    findPropellerTarget() {
+        // Priority 1: Crate
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                if (this.board.grid[r][c]?.isCrate) return { r, c };
+            }
+        }
+        // Priority 2: Objective Piece
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let p = this.board.grid[r][c];
+                if (p && this.targets[p.type] > 0) return { r, c };
+            }
+        }
+        return { r: Math.floor(Math.random()*GRID_SIZE), c: Math.floor(Math.random()*GRID_SIZE) };
+    }
+
+    async processCascades() {
+        while (true) {
+            let moved = this.board.applyGravityAndRefill();
+            if (moved) await this.delay(250);
+
+            let { matchedCells, boosterCreations } = this.board.findMatches();
+            if (matchedCells.size === 0) break;
+
+            await this.processMatches(matchedCells, boosterCreations);
+        }
+
+        this.checkGameEndState();
+        this.isBusy = false;
+    }
+
+    checkGameEndState() {
+        const victory = Object.values(this.targets).every(val => val <= 0);
+        const modal = document.getElementById('game-modal');
+        const title = document.getElementById('modal-title');
+        const subtitle = document.getElementById('modal-subtitle');
+
+        if (victory) {
+            title.innerText = "VICTORY!";
+            subtitle.innerText = "You completed all level objectives!";
+            modal.classList.add('active');
+            this.state = 'GAME_OVER';
+        } else if (this.movesLeft <= 0) {
+            title.innerText = "GAME OVER";
+            subtitle.innerText = "Out of moves! Try again.";
+            modal.classList.add('active');
+            this.state = 'GAME_OVER';
+        }
+    }
+
+    updateHUD() {
+        document.getElementById('moves-count').innerText = this.movesLeft;
+        document.getElementById('score-count').innerText = this.score;
+
+        const targetContainer = document.getElementById('targets-container');
+        targetContainer.innerHTML = '';
+
+        for (let key in this.targets) {
+            const count = this.targets[key];
+            const div = document.createElement('div');
+            div.className = 'target-item';
+            
+            const badge = document.createElement('span');
+            badge.style.color = COLORS[key] || '#e67e22';
+            badge.innerText = key === 'CRATE' ? '📦' : '●';
+
+            div.appendChild(badge);
+            div.appendChild(document.createTextNode(count <= 0 ? '✓' : count));
+            targetContainer.appendChild(div);
+        }
+    }
+
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // ============================================================================
+    // CANVAS RENDERING PIPELINE
+    // ============================================================================
+    loop() {
+        this.update();
+        this.draw();
+        requestAnimationFrame(this.loop);
+    }
+
+    update() {
+        this.particles.update();
+        // Update interpolation for positions
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let p = this.board.grid[r][c];
+                if (p) p.updatePosition();
+            }
+        }
+    }
+
+    draw() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cellSize = width / GRID_SIZE;
+
+        this.ctx.clearRect(0, 0, width, height);
+
+        // Draw Grid Background Cells
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                this.ctx.fillStyle = (r + c) % 2 === 0 ? '#1e1e38' : '#16162d';
+                this.ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+                this.ctx.strokeStyle = '#2a2a4a';
+                this.ctx.strokeRect(c * cellSize, r * cellSize, cellSize, cellSize);
+            }
+        }
+
+        // Draw Pieces & Boosters
+        for (let r = 0; r < GRID_SIZE; r++) {
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let p = this.board.grid[r][c];
+                if (p) this.drawPiece(p, cellSize);
+            }
+        }
+
+        // Draw Selection Highlight
+        if (this.selectedTile) {
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 4;
+            this.ctx.strokeRect(
+                this.selectedTile.c * cellSize + 2,
+                this.selectedTile.r * cellSize + 2,
+                cellSize - 4, cellSize - 4
+            );
+        }
+
+        // Draw Particles
+        this.particles.draw(this.ctx);
+    }
+
+    drawPiece(p, cellSize) {
+        const cx = (p.x + 0.5) * cellSize;
+        const cy = (p.y + 0.5) * cellSize;
+        const size = cellSize * 0.4 * p.scale;
+
+        this.ctx.save();
+        this.ctx.translate(cx, cy);
+
+        if (p.isCrate) {
+            // Render Crate Obstacle
+            this.ctx.fillStyle = '#8e44ad';
+            this.ctx.fillStyle = '#d35400';
+            this.ctx.fillRect(-cellSize*0.42, -cellSize*0.42, cellSize*0.84, cellSize*0.84);
+            this.ctx.strokeStyle = '#5e2700';
+            this.ctx.lineWidth = 4;
+            this.ctx.strokeRect(-cellSize*0.42, -cellSize*0.42, cellSize*0.84, cellSize*0.84);
+            
+            // Cross planks
+            this.ctx.beginPath();
+            this.ctx.moveTo(-cellSize*0.4, -cellSize*0.4);
+            this.ctx.lineTo(cellSize*0.4, cellSize*0.4);
+            this.ctx.moveTo(cellSize*0.4, -cellSize*0.4);
+            this.ctx.lineTo(-cellSize*0.4, cellSize*0.4);
+            this.ctx.stroke();
+            this.ctx.restore();
+            return;
+        }
+
+        // Base Piece Drawing
+        this.ctx.fillStyle = COLORS[p.type] || '#fff';
+        this.ctx.beginPath();
+
+        switch (p.type) {
+            case PIECE_TYPES.HEART:
+                this.ctx.arc(-size/2, -size/2, size/2, Math.PI, 0, false);
+                this.ctx.arc(size/2, -size/2, size/2, Math.PI, 0, false);
+                this.ctx.lineTo(0, size);
+                break;
+            case PIECE_TYPES.SHIELD:
+                this.ctx.moveTo(-size, -size);
+                this.ctx.lineTo(size, -size);
+                this.ctx.lineTo(size, 0);
+                this.ctx.lineTo(0, size);
+                this.ctx.lineTo(-size, 0);
+                break;
+            case PIECE_TYPES.CROWN:
+                this.ctx.moveTo(-size, size);
+                this.ctx.lineTo(-size, -size/2);
+                this.ctx.lineTo(-size/2, 0);
+                this.ctx.lineTo(0, -size);
+                this.ctx.lineTo(size/2, 0);
+                this.ctx.lineTo(size, -size/2);
+                this.ctx.lineTo(size, size);
+                break;
+            case PIECE_TYPES.BOOK:
+                this.ctx.rect(-size*0.8, -size*0.8, size*1.6, size*1.6);
+                break;
+            case PIECE_TYPES.GEM:
+            default:
+                this.ctx.moveTo(0, -size);
+                this.ctx.lineTo(size, 0);
+                this.ctx.lineTo(0, size);
+                this.ctx.lineTo(-size, 0);
+                break;
+        }
+        this.ctx.closePath();
+        this.ctx.fill();
+
+        // Overlay Special Booster Icons
+        if (p.booster !== BOOSTERS.NONE) {
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 2;
+            this.ctx.font = 'bold 16px sans-serif';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+
+            let icon = '';
+            if (p.booster === BOOSTERS.ROCKET_H) icon = '↔';
+            if (p.booster === BOOSTERS.ROCKET_V) icon = '↕';
+            if (p.booster === BOOSTERS.TNT) icon = '💣';
+            if (p.booster === BOOSTERS.PROPELLER) icon = '🚀';
+            if (p.booster === BOOSTERS.LIGHT_BALL) icon = '✨';
+
+            this.ctx.strokeText(icon, 0, 0);
+            this.ctx.fillText(icon, 0, 0);
+        }
+
+        this.ctx.restore();
+    }
+}
+
+// Start Game Engine on Load
+window.addEventListener('load', () => {
+    new Game();
+});
+</script>
+</body>
+</html>

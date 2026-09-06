@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Mario Bros. - World 1-1 (1985 NES Engine)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            border: 4px solid #333;
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.2);
+            background-color: #5c94fc;
+        }
+        canvas {
+            display: block;
+            image-rendering: optimizeSpeed;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: pixelated;
+            image-rendering: optimize-contrast;
+            -ms-interpolation-mode: nearest-neighbor;
+        }
+        #controls-info {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #aaa;
+            text-align: center;
+            line-height: 1.6;
+        }
+        .key {
+            background: #222;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #555;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="canvas" width="256" height="240"></canvas>
+</div>
+
+<div id="controls-info">
+    <p><strong>CONTROLS:</strong> <span class="key">A</span> / <span class="key">D</span> or <span class="key">←</span> / <span class="key">→</span> : Move &nbsp;|&nbsp; <span class="key">K</span> / <span class="key">Z</span> / <span class="key">SPACE</span> : Jump &nbsp;|&nbsp; <span class="key">J</span> / <span class="key">X</span> / <span class="key">SHIFT</span> : Run / Fireball</p>
+    <p>Click screen to initialize Audio Engine & Controller Focus</p>
+</div>
+
+<script>
+/**
+ * SUPER MARIO BROS. (1985 NES) - WORLD 1-1 COMPLETE REPLICA ENGINE
+ * Pure HTML5 Canvas & Vanilla JavaScript (Zero External Dependencies)
+ */
+
+// --- NES COLOR PALETTE ---
+const PALETTE = {
+    SKY: '#5c94fc',
+    GROUND_BROWN: '#c84c0c',
+    GROUND_ORANGE: '#fc9838',
+    BRICK_DARK: '#a40000',
+    PIPE_GREEN: '#00a800',
+    PIPE_LIGHT: '#80d010',
+    PIPE_DARK: '#005000',
+    BLOCK_YELLOW: '#fc9838',
+    MARIO_RED: '#b81c00',
+    MARIO_BROWN: '#6b6c00',
+    MARIO_SKIN: '#fc9838',
+    FIRE_WHITE: '#ffffff',
+    GOOMBA_BROWN: '#a40000',
+    KOOPA_GREEN: '#00a800',
+    WHITE: '#ffffff',
+    BLACK: '#000000'
+};
+
+// --- GAME CONSTANTS & RESOLUTION ---
+const TILE_SIZE = 16;
+const NES_WIDTH = 256;
+const NES_HEIGHT = 240;
+const SCALE = 3;
+
+const CANVAS = document.getElementById('canvas');
+const CTR = CANVAS.getContext('2d');
+CANVAS.style.width = `${NES_WIDTH * SCALE}px`;
+CANVAS.style.height = `${NES_HEIGHT * SCALE}px`;
+
+// --- CHIPTUNE WEB AUDIO SYNTHESIZER ---
+class AudioEngine {
+    constructor() {
+        this.ctx = null;
+    }
+
+    init() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    playTone(freq, duration, type = 'square', volume = 0.1) {
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + duration);
+        } catch(e){}
+    }
+
+    playJump() {
+        if (!this.ctx) return;
+        let now = this.ctx.currentTime;
+        let osc = this.ctx.createOscillator();
+        let gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(600, now + 0.15);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.15);
+    }
+
+    playCoin() {
+        this.playTone(987.77, 0.08, 'square', 0.12);
+        setTimeout(() => this.playTone(1318.51, 0.25, 'square', 0.12), 80);
+    }
+
+    playBump() { this.playTone(110, 0.1, 'triangle', 0.2); }
+    playStomp() { this.playTone(80, 0.08, 'triangle', 0.2); }
+    playFireball() { this.playTone(400, 0.05, 'square', 0.08); }
+    
+    playPowerup() {
+        const notes = [330, 392, 659, 523, 587, 784];
+        notes.forEach((freq, i) => setTimeout(() => this.playTone(freq, 0.08, 'square', 0.1), i * 50));
+    }
+
+    playFlagpole() {
+        const notes = [261, 329, 392, 523, 659, 784, 1046];
+        notes.forEach((freq, i) => setTimeout(() => this.playTone(freq, 0.1, 'square', 0.12), i * 70));
+    }
+
+    playStageClear() {
+        const fanfare = [
+            {f: 261, d: 0.15}, {f: 329, d: 0.15}, {f: 392, d: 0.15}, {f: 523, d: 0.3},
+            {f: 440, d: 0.15}, {f: 523, d: 0.4}
+        ];
+        let delay = 0;
+        fanfare.forEach(n => {
+            setTimeout(() => this.playTone(n.f, n.d, 'square', 0.12), delay);
+            delay += n.d * 1000;
+        });
+    }
+
+    playDeath() {
+        const notes = [500, 400, 300, 200, 100];
+        notes.forEach((freq, i) => setTimeout(() => this.playTone(freq, 0.1, 'sawtooth', 0.15), i * 90));
+    }
+}
+
+const audio = new AudioEngine();
+
+// --- KEYBOARD CONTROLLER ---
+const keys = { left: false, right: false, jump: false, run: false, down: false, runPressed: false };
+
+window.addEventListener('keydown', (e) => {
+    audio.init();
+    switch (e.code) {
+        case 'ArrowLeft': case 'KeyA': keys.left = true; break;
+        case 'ArrowRight': case 'KeyD': keys.right = true; break;
+        case 'ArrowDown': case 'KeyS': keys.down = true; break;
+        case 'KeyK': case 'KeyZ': case 'Space': 
+            if (!keys.jump) keys.jumpPressed = true;
+            keys.jump = true; 
+            break;
+        case 'KeyJ': case 'KeyX': case 'ShiftLeft': case 'ShiftRight': 
+            if (!keys.run) keys.runPressed = true;
+            keys.run = true; 
+            break;
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    switch (e.code) {
+        case 'ArrowLeft': case 'KeyA': keys.left = false; break;
+        case 'ArrowRight': case 'KeyD': keys.right = false; break;
+        case 'ArrowDown': case 'KeyS': keys.down = false; break;
+        case 'KeyK': case 'KeyZ': case 'Space': keys.jump = false; break;
+        case 'KeyJ': case 'KeyX': case 'ShiftLeft': case 'ShiftRight': keys.run = false; break;
+    }
+});
+
+// --- PROCEDURAL TILE GRAPHICS ENGINE ---
+const SpriteCache = {};
+
+function getTileSprite(type) {
+    if (SpriteCache[type]) return SpriteCache[type];
+
+    const cv = document.createElement('canvas');
+    cv.width = 16;
+    cv.height = 16;
+    const ctx = cv.getContext('2d');
+
+    if (type === 'ground') {
+        ctx.fillStyle = PALETTE.GROUND_BROWN; ctx.fillRect(0, 0, 16, 16);
+        ctx.fillStyle = PALETTE.GROUND_ORANGE;
+        ctx.fillRect(0, 0, 15, 1); ctx.fillRect(0, 0, 1, 15); ctx.fillRect(8, 0, 1, 16); ctx.fillRect(0, 8, 16, 1);
+        ctx.fillStyle = '#000'; ctx.fillRect(15, 0, 1, 16); ctx.fillRect(0, 15, 16, 1);
+    } else if (type === 'brick') {
+        ctx.fillStyle = PALETTE.GROUND_BROWN; ctx.fillRect(0, 0, 16, 16);
+        ctx.fillStyle = PALETTE.GROUND_ORANGE;
+        for(let y=0; y<16; y+=4) ctx.fillRect(0, y, 16, 1);
+        ctx.fillStyle = '#000';
+        for(let y=3; y<16; y+=4) ctx.fillRect(0, y, 16, 1);
+        ctx.fillRect(7, 0, 1, 4); ctx.fillRect(15, 0, 1, 4);
+        ctx.fillRect(3, 4, 1, 4); ctx.fillRect(11, 4, 1, 4);
+        ctx.fillRect(7, 8, 1, 4); ctx.fillRect(15, 8, 1, 4);
+        ctx.fillRect(3, 12, 1, 4); ctx.fillRect(11, 12, 1, 4);
+    } else if (type === 'qblock') {
+        ctx.fillStyle = PALETTE.BLOCK_YELLOW; ctx.fillRect(0, 0, 16, 16);
+        ctx.fillStyle = '#000';
+        ctx.strokeRect(0.5, 0.5, 15, 15);
+        ctx.fillRect(2, 2, 2, 2); ctx.fillRect(12, 2, 2, 2); ctx.fillRect(2, 12, 2, 2); ctx.fillRect(12, 12, 2, 2);
+        ctx.fillRect(6, 4, 5, 2); ctx.fillRect(10, 5, 2, 4); ctx.fillRect(8, 8, 2, 2); ctx.fillRect(8, 11, 2, 2);
+    } else if (type === 'empty') {
+        ctx.fillStyle = '#8d4200'; ctx.fillRect(0, 0, 16, 16);
+        ctx.fillStyle = '#000'; ctx.strokeRect(0.5, 0.5, 15, 15);
+    }
+
+    SpriteCache[type] = cv;
+    return cv;
+}
+
+// --- LEVEL MAP BUILDER ---
+const MAP_HEIGHT = 15;
+const MAP_WIDTH = 212;
+const levelMap = Array(MAP_HEIGHT).fill(0).map(() => Array(MAP_WIDTH).fill(' '));
+
+function buildWorld1_1() {
+    const setTile = (x, y, char) => { if (y >= 0 && y < MAP_HEIGHT && x >= 0 && x < MAP_WIDTH) levelMap[y][x] = char; };
+
+    // Ground & Floor Pits
+    for (let x = 0; x < MAP_WIDTH; x++) {
+        if ((x >= 69 && x <= 70) || (x >= 86 && x <= 88) || (x >= 153 && x <= 154)) continue;
+        levelMap[13][x] = 'G';
+        levelMap[14][x] = 'G';
+    }
+
+    // Question Blocks & Bricks
+    setTile(16, 9, '?_c');
+    setTile(20, 9, 'B'); setTile(21, 9, '?_m'); setTile(22, 9, 'B'); setTile(23, 9, '?_c'); setTile(24, 9, 'B');
+    setTile(22, 5, '?_c');
+
+    const addPipe = (x, height) => {
+        for (let y = 13 - height; y < 13; y++) {
+            levelMap[y][x] = 'P_L';
+            levelMap[y][x + 1] = 'P_R';
+        }
+    };
+    addPipe(28, 2); addPipe(38, 3); addPipe(46, 4); addPipe(57, 4);
+
+    // Secret 1-Up
+    setTile(64, 9, '?_1up');
+
+    setTile(77, 9, 'B'); setTile(78, 9, '?_m'); setTile(79, 9, 'B');
+    for (let x = 80; x <= 87; x++) setTile(x, 5, 'B');
+
+    for (let x = 91; x <= 93; x++) setTile(x, 5, 'B');
+    setTile(94, 5, '?_c'); setTile(94, 9, 'B');
+
+    setTile(100, 9, 'B'); setTile(101, 9, 'B');
+    setTile(106, 9, '?_c'); setTile(109, 9, '?_c'); setTile(109, 5, '?_star'); setTile(112, 9, '?_c');
+
+    setTile(118, 9, 'B');
+    for (let x = 121; x <= 123; x++) setTile(x, 5, 'B');
+
+    const addStairs = (startX, height, dir = 1) => {
+        for (let h = 1; h <= height; h++) {
+            let x = dir === 1 ? startX + (h - 1) : startX + (height - h);
+            for (let y = 13 - h; y < 13; y++) setTile(x, y, 'S');
+        }
+    };
+
+    addStairs(134, 4, 1); addStairs(140, 4, -1);
+    addStairs(148, 4, 1); addStairs(155, 4, -1);
+
+    addPipe(163, 2);
+    setTile(168, 9, 'B'); setTile(169, 9, 'B'); setTile(170, 9, '?_c'); setTile(171, 9, 'B');
+    addPipe(179, 2);
+
+    // End Level Flagpole & Castle Structure
+    addStairs(181, 8, 1);
+    for (let y = 3; y < 13; y++) setTile(198, y, 'F');
+    setTile(198, 2, 'F_TOP');
+
+    // Castle
+    for (let x = 202; x <= 207; x++) {
+        for (let y = 8; y < 13; y++) setTile(x, y, 'C');
+    }
+    // Castle Door
+    setTile(204, 11, 'C_DOOR'); setTile(204, 12, 'C_DOOR');
+    setTile(205, 11, 'C_DOOR'); setTile(205, 12, 'C_DOOR');
+}
+buildWorld1_1();
+
+// --- GAME STATE ---
+class GameState {
+    constructor() {
+        this.score = 0;
+        this.coins = 0;
+        this.world = "1-1";
+        this.time = 400;
+        this.cameraX = 0;
+        this.gameOver = false;
+        this.victory = false;
+        this.flagSequence = false;
+        this.flagY = 3 * TILE_SIZE;
+        this.timeScoring = false;
+
+        this.timerInterval = setInterval(() => {
+            if (this.time > 0 && !this.gameOver && !this.victory) this.time--;
+        }, 1000);
+    }
+}
+let game = new GameState();
+
+// --- FIREBALL ENTITY ---
+class Fireball {
+    constructor(x, y, facingLeft) {
+        this.x = x;
+        this.y = y;
+        this.w = 6;
+        this.h = 6;
+        this.vx = facingLeft ? -4 : 4;
+        this.vy = 2;
+        this.alive = true;
+    }
+
+    update() {
+        if (!this.alive) return;
+        this.vy += 0.3;
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Tile Collision
+        let tx = Math.floor((this.x + 3) / TILE_SIZE);
+        let ty = Math.floor((this.y + 6) / TILE_SIZE);
+
+        if (tx >= 0 && tx < MAP_WIDTH && ty >= 0 && ty < MAP_HEIGHT) {
+            if (levelMap[ty][tx] !== ' ') {
+                this.vy = -3; // Bounce
+            }
+        }
+
+        // Out of Screen Bounds
+        if (this.x < game.cameraX || this.x > game.cameraX + NES_WIDTH || this.y > NES_HEIGHT) {
+            this.alive = false;
+        }
+
+        // Enemy Collision
+        enemies.forEach(e => {
+            if (e.alive && !e.squished && Math.abs(this.x - e.x) < 12 && Math.abs(this.y - e.y) < 12) {
+                e.alive = false;
+                this.alive = false;
+                game.score += 100;
+                audio.playStomp();
+            }
+        });
+    }
+
+    draw() {
+        if (!this.alive) return;
+        CTR.fillStyle = '#fc9838';
+        CTR.beginPath();
+        CTR.arc(Math.round(this.x - game.cameraX), Math.round(this.y), 3, 0, Math.PI * 2);
+        CTR.fill();
+    }
+}
+let fireballs = [];
+
+// --- MARIO PLAYER CLASS ---
+class Mario {
+    constructor() {
+        this.x = 40;
+        this.y = 100;
+        this.w = 12;
+        this.h = 16;
+        this.vx = 0;
+        this.vy = 0;
+
+        // Physics Tuning (NES SMB)
+        this.ACCEL = 0.08;
+        this.FRICTION = 0.88;
+        this.MAX_WALK = 1.5;
+        this.MAX_RUN = 2.6;
+        this.GRAVITY = 0.45;
+        this.JUMP_FORCE = -7.2;
+
+        this.grounded = false;
+        this.facing = 'right';
+        this.state = 'small'; // small, super, fire
+        this.isSkidding = false;
+        this.animTimer = 0;
+        this.invulnerable = 0;
+        this.starTimer = 0;
+
+        // Special Animation States
+        this.isDying = false;
+        this.isFlagSliding = false;
+        this.isCastleWalking = false;
+    }
+
+    update() {
+        // Handle Death Sequence
+        if (this.isDying) {
+            this.vy += 0.3;
+            this.y += this.vy;
+            return;
+        }
+
+        // Handle Flagpole Victory Sequence
+        if (this.isFlagSliding) {
+            this.vx = 0;
+            if (this.y < 12 * TILE_SIZE) {
+                this.y += 2;
+                if (game.flagY < 12 * TILE_SIZE) game.flagY += 2;
+            } else {
+                this.isFlagSliding = false;
+                this.isCastleWalking = true;
+                this.x += 8;
+            }
+            return;
+        }
+
+        if (this.isCastleWalking) {
+            this.vx = 1.2;
+            this.x += this.vx;
+            this.animTimer++;
+            // Enter Castle Door
+            if (this.x >= 204.5 * TILE_SIZE) {
+                this.isCastleWalking = false;
+                this.vx = 0;
+                triggerVictorySequence();
+            }
+            return;
+        }
+
+        // Horizontal Movement Physics
+        let maxSpd = keys.run ? this.MAX_RUN : this.MAX_WALK;
+
+        if (keys.right) {
+            if (this.vx < 0) this.isSkidding = true;
+            else this.isSkidding = false;
+            this.vx += this.ACCEL;
+            this.facing = 'right';
+        } else if (keys.left) {
+            if (this.vx > 0) this.isSkidding = true;
+            else this.isSkidding = false;
+            this.vx -= this.ACCEL;
+            this.facing = 'left';
+        } else {
+            this.vx *= this.FRICTION;
+            this.isSkidding = false;
+        }
+
+        // Clamp Speed
+        if (this.vx > maxSpd) this.vx = maxSpd;
+        if (this.vx < -maxSpd) this.vx = -maxSpd;
+        if (Math.abs(this.vx) < 0.05) this.vx = 0;
+
+        // Jump Physics
+        if (keys.jumpPressed && this.grounded) {
+            this.vy = this.JUMP_FORCE - Math.abs(this.vx) * 0.22;
+            this.grounded = false;
+            keys.jumpPressed = false;
+            audio.playJump();
+        }
+
+        // Fireball Shooting (Fire Mario)
+        if (this.state === 'fire' && keys.runPressed) {
+            keys.runPressed = false;
+            if (fireballs.length < 2) {
+                fireballs.push(new Fireball(this.x + (this.facing === 'right' ? 12 : -4), this.y + 6, this.facing === 'left'));
+                audio.playFireball();
+            }
+        }
+
+        // Jump height modifier key holding
+        if (!keys.jump && this.vy < 0) this.vy += this.GRAVITY * 0.6;
+        else this.vy += this.GRAVITY;
+
+        if (this.vy > 8) this.vy = 8; // Terminal velocity
+
+        // Step Physics & Collisions
+        this.x += this.vx;
+        this.collideHorizontal();
+
+        this.y += this.vy;
+        this.collideVertical();
+
+        // Screen Boundaries & Right Camera Lock
+        if (this.x < game.cameraX) {
+            this.x = game.cameraX;
+            this.vx = 0;
+        }
+        if (this.x - game.cameraX > NES_WIDTH / 2) {
+            game.cameraX = this.x - NES_WIDTH / 2;
+        }
+
+        // Pit Fall Death
+        if (this.y > NES_HEIGHT) this.die();
+
+        // Check Flagpole Win Trigger
+        if (this.x >= 198 * TILE_SIZE - 4 && !game.victory) {
+            this.triggerFlagpole();
+        }
+
+        // Timers
+        if (this.invulnerable > 0) this.invulnerable--;
+        if (this.starTimer > 0) this.starTimer--;
+    }
+
+    triggerFlagpole() {
+        game.victory = true;
+        this.isFlagSliding = true;
+        this.x = 198 * TILE_SIZE - 4;
+        audio.playFlagpole();
+    }
+
+    collideHorizontal() {
+        let left = Math.floor(this.x / TILE_SIZE);
+        let right = Math.floor((this.x + this.w) / TILE_SIZE);
+        let top = Math.floor(this.y / TILE_SIZE);
+        let bottom = Math.floor((this.y + this.h - 1) / TILE_SIZE);
+
+        for (let y = top; y <= bottom; y++) {
+            for (let x = left; x <= right; x++) {
+                if (this.isSolid(x, y)) {
+                    if (this.vx > 0) { this.x = x * TILE_SIZE - this.w; this.vx = 0; }
+                    else if (this.vx < 0) { this.x = (x + 1) * TILE_SIZE; this.vx = 0; }
+                }
+            }
+        }
+    }
+
+    collideVertical() {
+        let left = Math.floor(this.x / TILE_SIZE);
+        let right = Math.floor((this.x + this.w - 1) / TILE_SIZE);
+        let top = Math.floor(this.y / TILE_SIZE);
+        let bottom = Math.floor((this.y + this.h) / TILE_SIZE);
+
+        this.grounded = false;
+
+        for (let y = top; y <= bottom; y++) {
+            for (let x = left; x <= right; x++) {
+                if (this.isSolid(x, y)) {
+                    if (this.vy > 0) { // Landing
+                        this.y = y * TILE_SIZE - this.h;
+                        this.vy = 0;
+                        this.grounded = true;
+                    } else if (this.vy < 0) { // Bumping Head
+                        this.y = (y + 1) * TILE_SIZE;
+                        this.vy = 0;
+                        this.hitBlock(x, y);
+                    }
+                }
+            }
+        }
+    }
+
+    isSolid(x, y) {
+        if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
+        let t = levelMap[y][x];
+        return t === 'G' || t === 'B' || t.startsWith('?') || t === 'E' || t === 'P_L' || t === 'P_R' || t === 'S';
+    }
+
+    hitBlock(x, y) {
+        let t = levelMap[y][x];
+
+        if (t.startsWith('?')) {
+            audio.playCoin();
+            levelMap[y][x] = 'E';
+            if (t.includes('_c')) { game.coins++; game.score += 200; }
+            else if (t.includes('_m')) {
+                items.push(new Item(x * TILE_SIZE, (y - 1) * TILE_SIZE, this.state === 'small' ? 'mushroom' : 'flower'));
+            } else if (t.includes('_star')) {
+                items.push(new Item(x * TILE_SIZE, (y - 1) * TILE_SIZE, 'star'));
+            }
+        } else if (t === 'B') {
+            if (this.state !== 'small') {
+                levelMap[y][x] = ' ';
+                audio.playBump();
+                game.score += 50;
+            } else {
+                audio.playBump();
+            }
+        }
+    }
+
+    die() {
+        if (this.isDying) return;
+        this.isDying = true;
+        game.gameOver = true;
+        this.vy = -7;
+        audio.playDeath();
+    }
+
+    draw() {
+        if (this.invulnerable % 4 >= 2) return;
+
+        CTR.save();
+        CTR.translate(Math.round(this.x - game.cameraX), Math.round(this.y));
+
+        if (this.facing === 'left') {
+            CTR.scale(-1, 1);
+            CTR.translate(-this.w, 0);
+        }
+
+        // Color Tones (Small, Fire, Super, Starman)
+        let mainColor = PALETTE.MARIO_RED;
+        let subColor = PALETTE.MARIO_BROWN;
+
+        if (this.state === 'fire') { mainColor = PALETTE.FIRE_WHITE; subColor = PALETTE.MARIO_RED; }
+        if (this.starTimer > 0 && Math.floor(Date.now() / 50) % 2 === 0) { mainColor = PALETTE.PIPE_LIGHT; }
+
+        // Draw Pixel Character Frame
+        CTR.fillStyle = mainColor;
+        CTR.fillRect(3, 0, 8, 3); // Hat
+        CTR.fillRect(2, 6, 9, 3); // Shirt
+
+        CTR.fillStyle = PALETTE.MARIO_SKIN;
+        CTR.fillRect(2, 3, 9, 3); // Face
+
+        CTR.fillStyle = subColor;
+        CTR.fillRect(3, 9, 6, 7); // Pants
+
+        CTR.restore();
+    }
+}
+
+// --- ITEM POWER-UPS CLASS ---
+class Item {
+    constructor(x, y, type) {
+        this.x = x; this.y = y;
+        this.w = 16; this.h = 16;
+        this.type = type;
+        this.vx = 1.0; this.vy = 0;
+        this.alive = true;
+    }
+
+    update() {
+        if (!this.alive) return;
+        if (this.type !== 'flower') {
+            this.vy += 0.3;
+            this.x += this.vx;
+            this.y += this.vy;
+
+            let tx = Math.floor((this.x + 8) / TILE_SIZE);
+            let ty = Math.floor((this.y + 16) / TILE_SIZE);
+
+            if (ty < MAP_HEIGHT && levelMap[ty][tx] !== ' ') {
+                this.y = (ty - 1) * TILE_SIZE;
+                this.vy = this.type === 'star' ? -4 : 0; // Star jumps
+            }
+        }
+
+        // Pickup Interaction
+        if (Math.abs(this.x - mario.x) < 12 && Math.abs(this.y - mario.y) < 14) {
+            this.alive = false;
+            game.score += 1000;
+            audio.playPowerup();
+
+            if (this.type === 'mushroom') {
+                mario.state = 'super'; mario.h = 24; mario.y -= 8;
+            } else if (this.type === 'flower') {
+                mario.state = 'fire'; mario.h = 24;
+            } else if (this.type === 'star') {
+                mario.starTimer = 600;
+            }
+        }
+    }
+
+    draw() {
+        if (!this.alive) return;
+        let rx = Math.round(this.x - game.cameraX);
+        let ry = Math.round(this.y);
+
+        if (this.type === 'mushroom') {
+            CTR.fillStyle = '#fc9838'; CTR.fillRect(rx, ry, 16, 16);
+            CTR.fillStyle = '#fff'; CTR.fillRect(rx + 4, ry + 3, 8, 6);
+        } else if (this.type === 'flower') {
+            CTR.fillStyle = '#fc9838'; CTR.fillRect(rx + 2, ry + 2, 12, 12);
+            CTR.fillStyle = '#ffffff'; CTR.fillRect(rx + 5, ry + 5, 6, 6);
+        } else if (this.type === 'star') {
+            CTR.fillStyle = '#f8d820'; CTR.fillRect(rx + 2, ry + 2, 12, 12);
+        }
+    }
+}
+
+// --- ENEMIES ENGINE ---
+class Enemy {
+    constructor(x, y, type = 'goomba') {
+        this.x = x; this.y = y;
+        this.w = 16; this.h = 16;
+        this.type = type;
+        this.vx = -0.4; this.vy = 0;
+        this.alive = true;
+        this.squished = false;
+        this.squishTimer = 0;
+        this.isShell = false;
+    }
+
+    update() {
+        if (this.squished) {
+            this.squishTimer++;
+            if (this.squishTimer > 30) this.alive = false;
+            return;
+        }
+
+        if (!this.alive) return;
+
+        this.vy += 0.3;
+        this.x += this.vx;
+        this.y += this.vy;
+
+        let tx = Math.floor((this.x + 8) / TILE_SIZE);
+        let ty = Math.floor((this.y + 16) / TILE_SIZE);
+
+        if (ty < MAP_HEIGHT && levelMap[ty][tx] !== ' ') {
+            this.y = (ty - 1) * TILE_SIZE;
+            this.vy = 0;
+        }
+
+        // Collision with Mario
+        if (Math.abs(this.x - mario.x) < 12 && Math.abs(this.y - mario.y) < 14) {
+            if (mario.starTimer > 0) {
+                this.alive = false;
+                game.score += 100;
+                audio.playStomp();
+            } else if (mario.vy > 0 && mario.y < this.y - 4) { // Stomp on Head
+                audio.playStomp();
+                mario.vy = -4;
+                if (this.type === 'goomba') {
+                    this.squished = true;
+                    game.score += 100;
+                } else if (this.type === 'koopa') {
+                    if (!this.isShell) { this.isShell = true; this.vx = 0; }
+                    else { this.vx = mario.facing === 'right' ? 4 : -4; } // Kick Shell
+                }
+            } else if (mario.invulnerable === 0) {
+                if (this.isShell && this.vx === 0) {
+                    // Kick shell safely
+                    this.vx = mario.facing === 'right' ? 4 : -4;
+                } else {
+                    mario.die();
+                }
+            }
+        }
+    }
+
+    draw() {
+        if (!this.alive) return;
+        let rx = Math.round(this.x - game.cameraX);
+        let ry = Math.round(this.y);
+
+        if (this.squished) {
+            CTR.fillStyle = PALETTE.GOOMBA_BROWN;
+            CTR.fillRect(rx, ry + 8, 16, 8);
+            return;
+        }
+
+        if (this.type === 'goomba') {
+            CTR.fillStyle = PALETTE.GOOMBA_BROWN;
+            CTR.fillRect(rx + 2, ry, 12, 12);
+            CTR.fillRect(rx, ry + 12, 16, 4);
+            CTR.fillStyle = '#000';
+            CTR.fillRect(rx + 3, ry + 4, 2, 4); CTR.fillRect(rx + 11, ry + 4, 2, 4);
+        } else if (this.type === 'koopa') {
+            CTR.fillStyle = PALETTE.KOOPA_GREEN;
+            CTR.fillRect(rx + 2, ry + 2, 12, 14);
+            CTR.fillStyle = '#fff';
+            CTR.fillRect(rx + 4, ry + 4, 4, 4);
+        }
+    }
+}
+
+// --- WORLD 1-1 EXACT ENTITY PLACEMENT ---
+const mario = new Mario();
+let items = [];
+let enemies = [
+    new Enemy(22 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(40 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(51 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(52.5 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(80 * TILE_SIZE, 4 * TILE_SIZE, 'goomba'),
+    new Enemy(82 * TILE_SIZE, 4 * TILE_SIZE, 'goomba'),
+    new Enemy(97 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(98.5 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(107 * TILE_SIZE, 12 * TILE_SIZE, 'koopa'), // 1 Koopa Troopa
+    new Enemy(114 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(115.5 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(124 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(125.5 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(174 * TILE_SIZE, 12 * TILE_SIZE, 'goomba'),
+    new Enemy(175.5 * TILE_SIZE, 12 * TILE_SIZE, 'goomba')
+];
+
+// --- STAGE CLEAR & VICTORY LOGIC ---
+function triggerVictorySequence() {
+    audio.playStageClear();
+    game.timeScoring = true;
+
+    // Convert remaining clock time to score points
+    let scoreTimer = setInterval(() => {
+        if (game.time > 0) {
+            game.time--;
+            game.score += 50;
+            audio.playTone(800, 0.02, 'square', 0.05);
+        } else {
+            clearInterval(scoreTimer);
+        }
+    }, 15);
+}
+
+// --- RENDER HUD & WORLD ---
+function renderMap() {
+    let startCol = Math.floor(game.cameraX / TILE_SIZE);
+    let endCol = startCol + Math.ceil(NES_WIDTH / TILE_SIZE) + 1;
+
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+        for (let x = startCol; x < endCol; x++) {
+            if (x < 0 || x >= MAP_WIDTH) continue;
+
+            let tile = levelMap[y][x];
+            let rx = Math.round(x * TILE_SIZE - game.cameraX);
+            let ry = y * TILE_SIZE;
+
+            if (tile === 'G') CTR.drawImage(getTileSprite('ground'), rx, ry);
+            else if (tile === 'B') CTR.drawImage(getTileSprite('brick'), rx, ry);
+            else if (tile.startsWith('?')) CTR.drawImage(getTileSprite('qblock'), rx, ry);
+            else if (tile === 'E') CTR.drawImage(getTileSprite('empty'), rx, ry);
+            else if (tile === 'P_L') {
+                CTR.fillStyle = PALETTE.PIPE_GREEN; CTR.fillRect(rx, ry, 16, 16);
+                CTR.fillStyle = PALETTE.PIPE_LIGHT; CTR.fillRect(rx + 2, ry, 3, 16);
+                CTR.fillStyle = '#000'; CTR.strokeRect(rx, ry, 16, 16);
+            } else if (tile === 'P_R') {
+                CTR.fillStyle = PALETTE.PIPE_GREEN; CTR.fillRect(rx, ry, 16, 16);
+                CTR.fillStyle = PALETTE.PIPE_DARK; CTR.fillRect(rx + 10, ry, 4, 16);
+                CTR.fillStyle = '#000'; CTR.strokeRect(rx, ry, 16, 16);
+            } else if (tile === 'S') {
+                CTR.fillStyle = '#b84418'; CTR.fillRect(rx, ry, 16, 16);
+                CTR.fillStyle = '#000'; CTR.strokeRect(rx + 0.5, ry + 0.5, 15, 15);
+            } else if (tile === 'F') {
+                CTR.fillStyle = '#ffffff'; CTR.fillRect(rx + 7, ry, 2, 16);
+            } else if (tile === 'F_TOP') {
+                CTR.fillStyle = '#00a800'; CTR.beginPath(); CTR.arc(rx + 8, ry + 8, 6, 0, Math.PI * 2); CTR.fill();
+            } else if (tile === 'C') {
+                CTR.fillStyle = '#b84418'; CTR.fillRect(rx, ry, 16, 16);
+            } else if (tile === 'C_DOOR') {
+                CTR.fillStyle = '#000000'; CTR.fillRect(rx, ry, 16, 16);
+            }
+        }
+    }
+
+    // Flagpole Green Flag Sliding down
+    if (game.victory) {
+        let flagX = Math.round(197.5 * TILE_SIZE - game.cameraX);
+        CTR.fillStyle = PALETTE.PIPE_LIGHT;
+        CTR.fillRect(flagX, Math.round(game.flagY), 12, 8);
+    }
+}
+
+function renderHUD() {
+    CTR.fillStyle = '#ffffff';
+    CTR.font = "8px 'Courier New', monospace";
+
+    CTR.fillText("MARIO", 20, 16);
+    CTR.fillText(String(game.score).padStart(6, '0'), 20, 25);
+    CTR.fillText("🪙x" + String(game.coins).padStart(2, '0'), 100, 25);
+    CTR.fillText("WORLD", 160, 16);
+    CTR.fillText(game.world, 168, 25);
+    CTR.fillText("TIME", 210, 16);
+    CTR.fillText(String(game.time).padStart(3, '0'), 214, 25);
+
+    if (game.gameOver) {
+        CTR.fillStyle = '#f83800';
+        CTR.font = "12px 'Courier New', monospace";
+        CTR.fillText("GAME OVER", 92, 120);
+    }
+
+    if (game.timeScoring && game.time === 0) {
+        CTR.fillStyle = '#ffffff';
+        CTR.font = "10px 'Courier New', monospace";
+        CTR.fillText("STAGE CLEAR!", 90, 100);
+    }
+}
+
+// --- MAIN LOOP ---
+function gameLoop() {
+    CTR.fillStyle = PALETTE.SKY;
+    CTR.fillRect(0, 0, NES_WIDTH, NES_HEIGHT);
+
+    if (!game.gameOver) {
+        mario.update();
+        enemies.forEach(e => e.update());
+        items.forEach(i => i.update());
+        fireballs.forEach(f => f.update());
+    }
+
+    renderMap();
+    items.forEach(i => i.draw());
+    enemies.forEach(e => e.draw());
+    fireballs.forEach(f => f.draw());
+    mario.draw();
+    renderHUD();
+
+    requestAnimationFrame(gameLoop);
+}
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>   

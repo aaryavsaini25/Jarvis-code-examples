@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Super Retro Kart 1992 (SNES Mode 7 Replica)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 640px;
+            height: 640px;
+            background: #000;
+            box-shadow: 0 0 30px rgba(0, 255, 100, 0.2), 0 0 10px #000;
+            border: 4px solid #333;
+            border-radius: 8px;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        .controls-hint {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #aaa;
+            text-align: center;
+            line-height: 1.5;
+        }
+        .key {
+            background: #333;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="canvas" width="320" height="320"></canvas>
+</div>
+
+<div class="controls-hint">
+    <span class="key">▲</span> / <span class="key">W</span> Accelerate | 
+    <span class="key">▼</span> / <span class="key">S</span> Brake/Reverse | 
+    <span class="key">◄</span> <span class="key">►</span> / <span class="key">A</span> <span class="key">D</span> Steer<br>
+    <span class="key">V</span> / <span class="key">SPACE</span> Hop & Drift | 
+    <span class="key">B</span> / <span class="key">SHIFT</span> Use Item
+</div>
+
+<script>
+/**
+ * SUPER RETRO KART - SNES Mode 7 Engine Replica
+ * Pure HTML5 Canvas & Web Audio API
+ */
+
+// --- AUDIO SYNTHESIZER (SNES Retro Sound Effects) ---
+class RetroAudio {
+    constructor() {
+        this.ctx = null;
+    }
+    init() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+    playTone(freq, type, duration, vol = 0.1) {
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + duration);
+        } catch(e) {}
+    }
+    playHop() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, this.ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(); osc.stop(this.ctx.currentTime + 0.1);
+    }
+    playCoin() {
+        this.playTone(987.77, 'square', 0.08, 0.1);
+        setTimeout(() => this.playTone(1318.51, 'square', 0.25, 0.1), 80);
+    }
+    playItemGet() {
+        for (let i = 0; i < 5; i++) {
+            setTimeout(() => this.playTone(400 + i * 150, 'square', 0.05, 0.08), i * 50);
+        }
+    }
+    playBoost() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(); osc.stop(this.ctx.currentTime + 0.4);
+    }
+    playSpin() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(100, this.ctx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(); osc.stop(this.ctx.currentTime + 0.5);
+    }
+}
+const audio = new RetroAudio();
+
+// --- GAME CONFIG & CHARACTERS ---
+const CHARACTERS = [
+    { name: 'MARIO', color: '#e74c3c', shirt: '#e74c3c', hat: '#c0392b', speed: 7.2, accel: 0.15, handling: 0.045, weight: 6, spriteCol: 0 },
+    { name: 'LUIGI', color: '#2ecc71', shirt: '#2ecc71', hat: '#27ae60', speed: 7.2, accel: 0.15, handling: 0.048, weight: 6, spriteCol: 1 },
+    { name: 'PEACH', color: '#f39c12', shirt: '#ff7675', hat: '#fd79a8', speed: 6.8, accel: 0.22, handling: 0.055, weight: 3, spriteCol: 2 },
+    { name: 'YOSHI', color: '#00b894', shirt: '#00b894', hat: '#55efc4', speed: 7.0, accel: 0.20, handling: 0.052, weight: 4, spriteCol: 3 },
+    { name: 'BOWSER', color: '#e67e22', shirt: '#d35400', hat: '#e67e22', speed: 8.2, accel: 0.09, handling: 0.032, weight: 10, spriteCol: 4 },
+    { name: 'DK JR', color: '#a0522d', shirt: '#8b4513', hat: '#cd853f', speed: 8.0, accel: 0.10, handling: 0.035, weight: 9, spriteCol: 5 },
+    { name: 'KOOPA', color: '#00cec9', shirt: '#0984e3', hat: '#74b9ff', speed: 6.6, accel: 0.21, handling: 0.060, weight: 3, spriteCol: 6 },
+    { name: 'TOAD', color: '#fdcb6e', shirt: '#e17055', hat: '#ffffff', speed: 6.6, accel: 0.25, handling: 0.058, weight: 2, spriteCol: 7 }
+];
+
+const ITEM_TYPES = ['MUSHROOM', 'GREEN_SHELL', 'RED_SHELL', 'BANANA', 'STAR', 'FEATHER'];
+
+// --- TRACK DEFINITION & PROCEDURAL MAP CANVAS ---
+const TRACK_SIZE = 1024;
+const trackCanvas = document.createElement('canvas');
+trackCanvas.width = TRACK_SIZE;
+trackCanvas.height = TRACK_SIZE;
+const trackCtx = trackCanvas.getContext('2d');
+
+// Track Waypoints (Mario Circuit 1 Loop)
+const WAYPOINTS = [
+    {x: 512, y: 860}, {x: 820, y: 860}, {x: 900, y: 780},
+    {x: 900, y: 550}, {x: 820, y: 480}, {x: 650, y: 480},
+    {x: 580, y: 400}, {x: 580, y: 250}, {x: 650, y: 150},
+    {x: 800, y: 150}, {x: 900, y: 220}, {x: 900, y: 320},
+    {x: 800, y: 380}, {x: 350, y: 380}, {x: 220, y: 300},
+    {x: 120, y: 300}, {x: 100, y: 450}, {x: 200, y: 600},
+    {x: 120, y: 750}, {x: 220, y: 860}
+];
+
+// Interactive Entities on Track
+let itemPanels = [];
+let coinPanels = [];
+let trackHazards = []; // Pipes, Thwomps
+let activeProjectiles = []; // Shells, Bananas
+
+function buildTrackGraphic() {
+    // Grass Base
+    trackCtx.fillStyle = '#10ac84';
+    trackCtx.fillRect(0, 0, TRACK_SIZE, TRACK_SIZE);
+    
+    // Sand Out of Bounds Areas
+    trackCtx.fillStyle = '#cca563';
+    trackCtx.beginPath();
+    trackCtx.arc(512, 512, 490, 0, Math.PI * 2);
+    trackCtx.fill();
+
+    // Outer Grass Ring
+    trackCtx.fillStyle = '#10ac84';
+    trackCtx.beginPath();
+    trackCtx.arc(512, 512, 460, 0, Math.PI * 2);
+    trackCtx.fill();
+
+    // Asphalt Road Path Construction
+    trackCtx.strokeStyle = '#576574';
+    trackCtx.lineWidth = 110;
+    trackCtx.lineCap = 'round';
+    trackCtx.lineJoin = 'round';
+    
+    trackCtx.beginPath();
+    trackCtx.moveTo(WAYPOINTS[0].x, WAYPOINTS[0].y);
+    for (let i = 1; i < WAYPOINTS.length; i++) {
+        trackCtx.lineTo(WAYPOINTS[i].x, WAYPOINTS[i].y);
+    }
+    trackCtx.closePath();
+    trackCtx.stroke();
+
+    // Red/White Curbing
+    trackCtx.strokeStyle = '#ee5253';
+    trackCtx.lineWidth = 120;
+    trackCtx.stroke();
+    trackCtx.strokeStyle = '#576574';
+    trackCtx.lineWidth = 100;
+    trackCtx.stroke();
+
+    // Start / Finish Line Grid
+    trackCtx.save();
+    trackCtx.translate(512, 860);
+    for (let rx = -45; rx < 45; rx += 15) {
+        for (let ry = -10; ry < 10; ry += 10) {
+            trackCtx.fillStyle = ((rx + ry) / 5) % 2 === 0 ? '#ffffff' : '#000000';
+            trackCtx.fillRect(rx, ry, 15, 10);
+        }
+    }
+    trackCtx.restore();
+
+    // Populate Item & Coin Panels
+    itemPanels = [
+        {x: 650, y: 860, active: true, respawn: 0},
+        {x: 670, y: 860, active: true, respawn: 0},
+        {x: 690, y: 860, active: true, respawn: 0},
+        {x: 750, y: 150, active: true, respawn: 0},
+        {x: 770, y: 150, active: true, respawn: 0},
+        {x: 200, y: 300, active: true, respawn: 0},
+        {x: 220, y: 300, active: true, respawn: 0}
+    ];
+
+    coinPanels = [
+        {x: 570, y: 860, active: true}, {x: 590, y: 860, active: true},
+        {x: 880, y: 650, active: true}, {x: 880, y: 680, active: true},
+        {x: 600, y: 250, active: true}, {x: 120, y: 380, active: true}
+    ];
+
+    trackHazards = [
+        {x: 880, y: 720, type: 'PIPE', radius: 18},
+        {x: 600, y: 200, type: 'PIPE', radius: 18},
+        {x: 110, y: 400, type: 'PIPE', radius: 18},
+        {x: 700, y: 480, type: 'THWOMP', radius: 22, z: 0, state: 'UP', timer: 0}
+    ];
+}
+
+// Generate Track Image Data for Mode 7 Texture Sampling
+buildTrackGraphic();
+const trackImgData = trackCtx.getImageData(0, 0, TRACK_SIZE, TRACK_SIZE);
+const trackPixels = new Uint32Array(trackImgData.data.buffer);
+
+// --- INPUT HANDLER ---
+const keys = { up: false, down: false, left: false, right: false, hop: false, item: false };
+window.addEventListener('keydown', e => {
+    audio.init();
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = true;
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = true;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    if (e.key === 'v' || e.key === 'V' || e.key === ' ') {
+        if (!keys.hop && gameState === 'RACE') player.triggerHop();
+        keys.hop = true;
+    }
+    if (e.key === 'b' || e.key === 'B' || e.key === 'Shift') {
+        if (!keys.item && gameState === 'RACE') player.useItem();
+        keys.item = true;
+    }
+    if (e.key === 'Enter') {
+        if (gameState === 'SELECT') startRace();
+        else if (gameState === 'GAMEOVER') gameState = 'SELECT';
+    }
+});
+window.addEventListener('keyup', e => {
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = false;
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = false;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+    if (e.key === 'v' || e.key === 'V' || e.key === ' ') keys.hop = false;
+    if (e.key === 'b' || e.key === 'B' || e.key === 'Shift') keys.item = false;
+});
+
+// --- KART CLASS (PLAYER & AI) ---
+class Kart {
+    constructor(charData, isAI = false, startIdx = 0) {
+        this.char = charData;
+        this.isAI = isAI;
+        this.x = 470 + (startIdx % 2) * 35;
+        this.y = 860 + Math.floor(startIdx / 2) * 45;
+        this.angle = 0; // 0 = facing East, Math.PI/2 = South, etc.
+        this.speed = 0;
+        this.z = 0; // Hop/Jump height
+        this.vz = 0;
+        this.coins = 5;
+        this.item = null;
+        this.rouletteItem = null;
+        this.rouletteTimer = 0;
+        this.lap = 1;
+        this.waypointIdx = 0;
+        this.spinTimer = 0;
+        this.starTimer = 0;
+        this.driftDir = 0; // -1 Left, 1 Right
+        this.isGrounded = true;
+        this.rank = startIdx + 1;
+        
+        // AI Pathing
+        this.aiTargetWp = 1;
+    }
+
+    update() {
+        if (this.spinTimer > 0) {
+            this.spinTimer--;
+            this.angle += 0.3;
+            this.speed *= 0.92;
+            this.movePhysics();
+            return;
+        }
+
+        if (this.starTimer > 0) this.starTimer--;
+
+        // Hop / Gravity Physics
+        if (!this.isGrounded) {
+            this.z += this.vz;
+            this.vz -= 0.6; // Gravity
+            if (this.z <= 0) {
+                this.z = 0;
+                this.isGrounded = true;
+                this.vz = 0;
+            }
+        }
+
+        if (this.isAI) {
+            this.updateAI();
+        } else {
+            this.updatePlayer();
+        }
+
+        this.movePhysics();
+        this.checkCollisions();
+        this.updateWaypoints();
+
+        // Item Roulette Spinner Animation
+        if (this.rouletteTimer > 0) {
+            this.rouletteTimer--;
+            if (this.rouletteTimer % 4 === 0) {
+                this.rouletteItem = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
+            }
+            if (this.rouletteTimer === 0) {
+                this.item = this.rouletteItem;
+                this.rouletteItem = null;
+            }
+        }
+    }
+
+    triggerHop() {
+        if (this.isGrounded) {
+            this.vz = 3.5;
+            this.isGrounded = false;
+            audio.playHop();
+            if (keys.left) this.driftDir = -1;
+            else if (keys.right) this.driftDir = 1;
+            else this.driftDir = 0;
+        }
+    }
+
+    updatePlayer() {
+        // Acceleration & Braking
+        const maxSpd = (this.char.speed + (this.coins * 0.12)) * (this.starTimer > 0 ? 1.25 : 1.0);
+        if (keys.up) {
+            this.speed += this.char.accel;
+            if (this.speed > maxSpd) this.speed = maxSpd;
+        } else if (keys.down) {
+            this.speed -= this.char.accel * 1.5;
+            if (this.speed < -maxSpd * 0.4) this.speed = -maxSpd * 0.4;
+        } else {
+            this.speed *= 0.96; // Friction
+        }
+
+        // Steering & Drifting
+        let turnRate = this.char.handling * (this.speed / maxSpd);
+        if (!this.isGrounded && this.driftDir !== 0) {
+            turnRate *= 1.4; // Tighter drift turn
+        }
+        if (keys.left) this.angle -= turnRate;
+        if (keys.right) this.angle += turnRate;
+    }
+
+    updateAI() {
+        const target = WAYPOINTS[this.aiTargetWp];
+        const dx = target.x - this.x;
+        const dy = target.y - this.y;
+        const targetAngle = Math.atan2(dy, dx);
+        
+        let diff = targetAngle - this.angle;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+
+        this.angle += Math.sign(diff) * Math.min(Math.abs(diff), this.char.handling * 0.9);
+        
+        const targetSpeed = this.char.speed * 0.92;
+        if (this.speed < targetSpeed) this.speed += this.char.accel;
+
+        if (Math.hypot(dx, dy) < 70) {
+            this.aiTargetWp = (this.aiTargetWp + 1) % WAYPOINTS.length;
+        }
+
+        // AI Randomly uses item
+        if (this.item && Math.random() < 0.005) {
+            this.useItem();
+        }
+    }
+
+    movePhysics() {
+        // Check Offroad Terrain
+        const tx = Math.floor(this.x);
+        const ty = Math.floor(this.y);
+        let onRoad = false;
+        if (tx >= 0 && tx < TRACK_SIZE && ty >= 0 && ty < TRACK_SIZE) {
+            const pixel = trackPixels[ty * TRACK_SIZE + tx];
+            const r = pixel & 0xFF;
+            const g = (pixel >> 8) & 0xFF;
+            const b = (pixel >> 16) & 0xFF;
+            // Detect asphalt grey/white curb
+            if ((Math.abs(r - g) < 20 && Math.abs(g - b) < 20 && r > 60) || (r > 200 && g < 100)) {
+                onRoad = true;
+            }
+        }
+
+        // Offroad slowdown unless Star power is active
+        if (!onRoad && this.starTimer === 0 && this.z < 2) {
+            this.speed *= 0.82;
+        }
+
+        this.x += Math.cos(this.angle) * this.speed;
+        this.y += Math.sin(this.angle) * this.speed;
+
+        // Keep inside world map bounds
+        this.x = Math.max(20, Math.min(TRACK_SIZE - 20, this.x));
+        this.y = Math.max(20, Math.min(TRACK_SIZE - 20, this.y));
+    }
+
+    checkCollisions() {
+        // Coin Panel Pickups
+        coinPanels.forEach(c => {
+            if (c.active && Math.hypot(this.x - c.x, this.y - c.y) < 20) {
+                c.active = false;
+                this.coins = Math.min(10, this.coins + 1);
+                if (!this.isAI) audio.playCoin();
+                setTimeout(() => c.active = true, 10000);
+            }
+        });
+
+        // Item Question Mark Panels
+        itemPanels.forEach(p => {
+            if (p.active && Math.hypot(this.x - p.x, this.y - p.y) < 22) {
+                p.active = false;
+                p.respawn = 300;
+                if (!this.item && this.rouletteTimer === 0) {
+                    this.rouletteTimer = 60;
+                    if (!this.isAI) audio.playItemGet();
+                }
+            }
+        });
+
+        // Hazards (Pipes & Thwomps)
+        trackHazards.forEach(h => {
+            if (Math.hypot(this.x - h.x, this.y - h.y) < h.radius && this.z < 10) {
+                if (this.starTimer === 0) {
+                    this.spinOut();
+                }
+            }
+        });
+    }
+
+    spinOut() {
+        if (this.spinTimer === 0 && this.starTimer === 0) {
+            this.spinTimer = 40;
+            this.coins = Math.max(0, this.coins - 2);
+            if (!this.isAI) audio.playSpin();
+        }
+    }
+
+    useItem() {
+        if (!this.item) return;
+        const type = this.item;
+        this.item = null;
+
+        if (type === 'MUSHROOM') {
+            this.speed += 4.5;
+            if (!this.isAI) audio.playBoost();
+        } else if (type === 'STAR') {
+            this.starTimer = 300; // 5 seconds
+            if (!this.isAI) audio.playBoost();
+        } else if (type === 'FEATHER') {
+            this.vz = 7.0;
+            this.isGrounded = false;
+            if (!this.isAI) audio.playHop();
+        } else if (type === 'BANANA') {
+            activeProjectiles.push({
+                type: 'BANANA',
+                x: this.x - Math.cos(this.angle) * 25,
+                y: this.y - Math.sin(this.angle) * 25,
+                vx: 0, vy: 0, life: 1200
+            });
+        } else if (type === 'GREEN_SHELL') {
+            activeProjectiles.push({
+                type: 'GREEN_SHELL',
+                x: this.x + Math.cos(this.angle) * 25,
+                y: this.y + Math.sin(this.angle) * 25,
+                vx: Math.cos(this.angle) * 11,
+                vy: Math.sin(this.angle) * 11,
+                life: 300
+            });
+        } else if (type === 'RED_SHELL') {
+            activeProjectiles.push({
+                type: 'RED_SHELL',
+                x: this.x + Math.cos(this.angle) * 25,
+                y: this.y + Math.sin(this.angle) * 25,
+                vx: Math.cos(this.angle) * 9,
+                vy: Math.sin(this.angle) * 9,
+                life: 400,
+                target: getLeaderKart(this)
+            });
+        }
+    }
+
+    updateWaypoints() {
+        const nextWpIdx = (this.waypointIdx + 1) % WAYPOINTS.length;
+        const target = WAYPOINTS[nextWpIdx];
+        if (Math.hypot(this.x - target.x, this.y - target.y) < 90) {
+            this.waypointIdx = nextWpIdx;
+            if (this.waypointIdx === 0) {
+                this.lap++;
+                if (!this.isAI && this.lap > 5) {
+                    gameState = 'GAMEOVER';
+                }
+            }
+        }
+    }
+}
+
+function getLeaderKart(current) {
+    return karts.find(k => k !== current && k.rank < current.rank) || null;
+}
+
+// --- GAME STATE MANAGEMENT ---
+let gameState = 'SELECT'; // 'SELECT', 'COUNTDOWN', 'RACE', 'GAMEOVER'
+let selectedCharIdx = 0;
+let karts = [];
+let player = null;
+let countdownTimer = 0;
+
+function startRace() {
+    karts = [];
+    const playerChar = CHARACTERS[selectedCharIdx];
+    player = new Kart(playerChar, false, 0);
+    karts.push(player);
+
+    let idx = 1;
+    CHARACTERS.forEach((char, i) => {
+        if (i !== selectedCharIdx && idx < 8) {
+            karts.push(new Kart(char, true, idx));
+            idx++;
+        }
+    });
+
+    gameState = 'COUNTDOWN';
+    countdownTimer = 180; // 3 Seconds
+}
+
+// --- RENDERING ENGINE (MODE 7 CANVAS SCANLINE PROJECTION) ---
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// Mode 7 Render Target Buffer (320x160 Top Viewport)
+const viewWidth = 320;
+const viewHeight = 160;
+const mode7ImgData = ctx.createImageData(viewWidth, viewHeight);
+const mode7Pixels = new Uint32Array(mode7ImgData.data.buffer);
+
+function renderMode7(camera) {
+    const fov = 180;
+    const cameraZ = 32 + camera.z;
+    const horizon = 20;
+
+    const cosA = Math.cos(camera.angle - Math.PI / 2);
+    const sinA = Math.sin(camera.angle - Math.PI / 2);
+
+    for (let y = 0; y < viewHeight; y++) {
+        if (y < horizon) {
+            // Sky Render
+            for (let x = 0; x < viewWidth; x++) {
+                mode7Pixels[y * viewWidth + x] = 0xFFF79F4A; // Blue Sky Pixel
+            }
+            continue;
+        }
+
+        // Distance scale factor based on perspective pitch
+        const distance = (cameraZ * fov) / (y - horizon + 0.1);
+        const horizontalScale = distance / fov;
+
+        const lineStartX = camera.x + distance * cosA - (viewWidth / 2) * horizontalScale * sinA;
+        const lineStartY = camera.y + distance * sinA + (viewWidth / 2) * horizontalScale * cosA;
+
+        const stepX = horizontalScale * sinA;
+        const stepY = -horizontalScale * cosA;
+
+        let spaceX = lineStartX;
+        let spaceY = lineStartY;
+
+        for (let x = 0; x < viewWidth; x++) {
+            const mapX = Math.floor(spaceX) & (TRACK_SIZE - 1);
+            const mapY = Math.floor(spaceY) & (TRACK_SIZE - 1);
+
+            mode7Pixels[y * viewWidth + x] = trackPixels[mapY * TRACK_SIZE + mapX];
+
+            spaceX += stepX;
+            spaceY += stepY;
+        }
+    }
+
+    ctx.putImageData(mode7ImgData, 0, 0);
+}
+
+// Draw 3D Projected Sprite in Mode 7 Viewport
+function drawBillboardSprite(x, y, z, drawFn, camera) {
+    const dx = x - camera.x;
+    const dy = y - camera.y;
+
+    const cosA = Math.cos(-camera.angle + Math.PI / 2);
+    const sinA = Math.sin(-camera.angle + Math.PI / 2);
+
+    const rotX = dx * cosA - dy * sinA;
+    const rotY = dx * sinA + dy * cosA;
+
+    if (rotY <= 4) return; // Behind camera
+
+    const fov = 180;
+    const screenX = viewWidth / 2 + (rotX * fov) / rotY;
+    const screenY = 20 + ((32 - z) * fov) / rotY;
+    const scale = Math.min(3.0, Math.max(0.15, fov / rotY));
+
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    ctx.scale(scale, scale);
+    drawFn(ctx);
+    ctx.restore();
+}
+
+// --- SPRITE PROCEDURAL DRAWING HELPERS ---
+function drawKartSprite(ctxCtx, char, angleOffset = 0, isPlayer = false) {
+    ctxCtx.translate(0, -12);
+    // Kart Chassis
+    ctxCtx.fillStyle = '#222';
+    ctxCtx.fillRect(-10, 6, 20, 8); // Rear Wheels
+    ctxCtx.fillStyle = char.color;
+    ctxCtx.fillRect(-8, -2, 16, 10); // Body
+
+    // Driver Head / Hat
+    ctxCtx.fillStyle = char.hat;
+    ctxCtx.beginPath(); ctxCtx.arc(0, -5, 6, 0, Math.PI * 2); ctxCtx.fill();
+    ctxCtx.fillStyle = '#ffeaa7'; // Face
+    ctxCtx.fillRect(-3, -4, 6, 4);
+
+    // Dynamic Steering Wheel / Arms
+    ctxCtx.fillStyle = char.shirt;
+    ctxCtx.fillRect(-6 + angleOffset * 2, -1, 4, 4);
+    ctxCtx.fillRect(2 + angleOffset * 2, -1, 4, 4);
+}
+
+function drawItemSprite(ctxCtx, type) {
+    if (type === 'BANANA') {
+        ctxCtx.fillStyle = '#f1c40f';
+        ctxCtx.beginPath(); ctxCtx.arc(0, 0, 5, 0, Math.PI); ctxCtx.fill();
+    } else if (type === 'GREEN_SHELL') {
+        ctxCtx.fillStyle = '#2ecc71';
+        ctxCtx.beginPath(); ctxCtx.arc(0, 0, 6, 0, Math.PI * 2); ctxCtx.fill();
+    } else if (type === 'RED_SHELL') {
+        ctxCtx.fillStyle = '#e74c3c';
+        ctxCtx.beginPath(); ctxCtx.arc(0, 0, 6, 0, Math.PI * 2); ctxCtx.fill();
+    } else if (type === 'PIPE') {
+        ctxCtx.fillStyle = '#00b894';
+        ctxCtx.fillRect(-8, -16, 16, 16);
+        ctxCtx.fillRect(-10, -20, 20, 5);
+    } else if (type === 'THWOMP') {
+        ctxCtx.fillStyle = '#7f8c8d';
+        ctxCtx.fillRect(-12, -24, 24, 24);
+        ctxCtx.fillStyle = '#fff'; ctxCtx.fillRect(-8, -18, 4, 4); ctxCtx.fillRect(4, -18, 4, 4);
+    }
+}
+
+// --- OVERHEAD MINIMAP & SPLIT-SCREEN HUD ---
+function renderHUD() {
+    // Bottom Viewport Background (SNES Split Screen HUD)
+    ctx.fillStyle = '#1e272e';
+    ctx.fillRect(0, 160, 320, 160);
+
+    // Mini Map (Track Outline + Karts)
+    const mapScale = 0.13;
+    const mapOffsetX = 180;
+    const mapOffsetY = 170;
+
+    ctx.save();
+    ctx.translate(mapOffsetX, mapOffsetY);
+    ctx.scale(mapScale, mapScale);
+    ctx.drawImage(trackCanvas, 0, 0);
+
+    // Draw Kart Markers on Minimap
+    karts.forEach(k => {
+        ctx.fillStyle = k.char.color;
+        ctx.beginPath();
+        ctx.arc(k.x, k.y, k === player ? 25 : 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+    });
+    ctx.restore();
+
+    // Top-Left Item Box Banner
+    ctx.fillStyle = '#d2dae2';
+    ctx.fillRect(15, 170, 50, 45);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeRect(15, 170, 50, 45);
+
+    const activeItem = player.rouletteItem || player.item;
+    if (activeItem) {
+        ctx.save();
+        ctx.translate(40, 192);
+        ctx.scale(2.0, 2.0);
+        drawItemSprite(ctx, activeItem);
+        ctx.restore();
+    }
+
+    // Leaderboard Positions & Lap Info
+    ctx.fillStyle = '#fbc531';
+    ctx.font = 'bold 16px Courier New';
+    ctx.fillText(`LAP ${Math.min(5, player.lap)}/5`, 80, 185);
+    ctx.fillText(`COINS: ${player.coins}`, 80, 205);
+
+    // Rank Standing Big Text
+    ctx.fillStyle = '#fff';
+    ctx.font = 'italic bold 28px Courier New';
+    const suffixes = ['ST', 'ND', 'RD', 'TH'];
+    const rankStr = player.rank + (suffixes[player.rank - 1] || 'TH');
+    ctx.fillText(rankStr, 20, 250);
+
+    // Character Name Tag
+    ctx.font = 'bold 12px Courier New';
+    ctx.fillStyle = player.char.color;
+    ctx.fillText(player.char.name, 20, 270);
+}
+
+// --- PROJECTILE & HAZARD UPDATES ---
+function updateProjectiles() {
+    for (let i = activeProjectiles.length - 1; i >= 0; i--) {
+        const p = activeProjectiles[i];
+        p.life--;
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.type === 'RED_SHELL' && p.target) {
+            const angle = Math.atan2(p.target.y - p.y, p.target.x - p.x);
+            p.vx = Math.cos(angle) * 8.5;
+            p.vy = Math.sin(angle) * 8.5;
+        }
+
+        // Hit Detection against Karts
+        karts.forEach(k => {
+            if (Math.hypot(k.x - p.x, k.y - p.y) < 20 && k.z < 10) {
+                k.spinOut();
+                p.life = 0;
+            }
+        });
+
+        if (p.life <= 0 || p.x < 0 || p.x > TRACK_SIZE || p.y < 0 || p.y > TRACK_SIZE) {
+            activeProjectiles.splice(i, 1);
+        }
+    }
+
+    // Dynamic Thwomp Motion
+    trackHazards.forEach(h => {
+        if (h.type === 'THWOMP') {
+            if (h.state === 'UP') {
+                h.z = Math.min(40, h.z + 1);
+                if (h.z >= 40 && Math.random() < 0.02) h.state = 'DROP';
+            } else if (h.state === 'DROP') {
+                h.z = Math.max(0, h.z - 5);
+                if (h.z === 0) h.state = 'UP';
+            }
+        }
+    });
+
+    // Update Kart Rankings
+    karts.sort((a, b) => (b.lap * 100 + b.waypointIdx) - (a.lap * 100 + a.waypointIdx));
+    karts.forEach((k, rank) => k.rank = rank + 1);
+}
+
+// --- CHARACTER SELECTION MENU ---
+function renderCharacterSelect() {
+    ctx.fillStyle = '#0f0f23';
+    ctx.fillRect(0, 0, 320, 320);
+
+    ctx.fillStyle = '#fbc531';
+    ctx.font = 'bold 16px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('SUPER RETRO KART 1992', 160, 30);
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px Courier New';
+    ctx.fillText('SELECT YOUR DRIVER', 160, 50);
+
+    const gridCols = 4;
+    CHARACTERS.forEach((char, i) => {
+        const col = i % gridCols;
+        const row = Math.floor(i / gridCols);
+        const x = 40 + col * 65;
+        const y = 80 + row * 80;
+
+        if (i === selectedCharIdx) {
+            ctx.fillStyle = '#e1b12c';
+            ctx.fillRect(x - 5, y - 5, 55, 65);
+        }
+
+        ctx.fillStyle = char.color;
+        ctx.fillRect(x, y, 45, 40);
+
+        // Preview Kart
+        ctx.save();
+        ctx.translate(x + 22, y + 20);
+        drawKartSprite(ctx, char);
+        ctx.restore();
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px Courier New';
+        ctx.fillText(char.name, x + 22, y + 52);
+    });
+
+    // Handle Menu Input Navigation
+    if (keys.right) { selectedCharIdx = (selectedCharIdx + 1) % 8; keys.right = false; audio.playHop(); }
+    if (keys.left) { selectedCharIdx = (selectedCharIdx + 7) % 8; keys.left = false; audio.playHop(); }
+    if (keys.down) { selectedCharIdx = (selectedCharIdx + 4) % 8; keys.down = false; audio.playHop(); }
+    if (keys.up) { selectedCharIdx = (selectedCharIdx + 4) % 8; keys.up = false; audio.playHop(); }
+
+    // Character Stats Cards
+    const cur = CHARACTERS[selectedCharIdx];
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#00d2d3';
+    ctx.fillText(`SPEED:   ${'■'.repeat(Math.floor(cur.speed))}`, 40, 250);
+    ctx.fillText(`ACCEL:   ${'■'.repeat(Math.floor(cur.accel * 30))}`, 40, 265);
+    ctx.fillText(`WEIGHT:  ${'■'.repeat(Math.floor(cur.weight / 2))}`, 40, 280);
+
+    ctx.fillStyle = '#4cd137';
+    ctx.textAlign = 'center';
+    ctx.fillText('PRESS ENTER OR USE ITEM TO START', 160, 305);
+}
+
+// --- MAIN GAME LOOP ---
+function gameLoop() {
+    ctx.clearRect(0, 0, 320, 320);
+
+    if (gameState === 'SELECT') {
+        renderCharacterSelect();
+    } else if (gameState === 'COUNTDOWN' || gameState === 'RACE' || gameState === 'GAMEOVER') {
+        if (gameState === 'COUNTDOWN') {
+            countdownTimer--;
+            if (countdownTimer === 0) gameState = 'RACE';
+        }
+
+        // Update Karts and World Objects
+        if (gameState === 'RACE') {
+            karts.forEach(k => k.update());
+            updateProjectiles();
+        }
+
+        // Render Mode 7 3D Perspective View
+        renderMode7(player);
+
+        // Render Projected Objects (Hazards, Items, Projectiles, Karts)
+        const renderableObjects = [];
+
+        itemPanels.forEach(p => { if (p.active) renderableObjects.push({ x: p.x, y: p.y, z: 0, draw: c => drawItemSprite(c, 'GREEN_SHELL') }); });
+        trackHazards.forEach(h => renderableObjects.push({ x: h.x, y: h.y, z: h.z || 0, draw: c => drawItemSprite(c, h.type) }));
+        activeProjectiles.forEach(p => renderableObjects.push({ x: p.x, y: p.y, z: 2, draw: c => drawItemSprite(c, p.type) }));
+        karts.forEach(k => {
+            if (k !== player) {
+                renderableObjects.push({
+                    x: k.x, y: k.y, z: k.z,
+                    draw: c => drawKartSprite(c, k.char, Math.sin(k.angle - player.angle))
+                });
+            }
+        });
+
+        // Depth sort objects relative to player distance
+        renderableObjects.sort((a, b) => Math.hypot(b.x - player.x, b.y - player.y) - Math.hypot(a.x - player.x, a.y - player.y));
+        renderableObjects.forEach(obj => drawBillboardSprite(obj.x, obj.y, obj.z, obj.draw, player));
+
+        // Draw Player Kart Centered on Screen
+        ctx.save();
+        ctx.translate(viewWidth / 2, 125 - player.z);
+        drawKartSprite(ctx, player.char, keys.left ? -1 : keys.right ? 1 : 0, true);
+        ctx.restore();
+
+        // Overlay SNES HUD
+        renderHUD();
+
+        // Countdown Text
+        if (gameState === 'COUNTDOWN') {
+            ctx.fillStyle = '#f1c40f';
+            ctx.font = 'bold 36px Courier New';
+            ctx.textAlign = 'center';
+            const num = Math.ceil(countdownTimer / 60);
+            ctx.fillText(num > 0 ? num.toString() : 'GO!', 160, 90);
+        } else if (gameState === 'GAMEOVER') {
+            ctx.fillStyle = '#e74c3c';
+            ctx.font = 'bold 28px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('FINISH!', 160, 80);
+            ctx.font = '12px Courier New';
+            ctx.fillStyle = '#fff';
+            ctx.fillText('PRESS ENTER TO MAIN MENU', 160, 110);
+        }
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// Launch Game Engine
+requestAnimationFrame(gameLoop);
+
+</script>
+</body>
+</html>

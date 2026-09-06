@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subway Surfers 3D Engine Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0c1017;
+            font-family: 'Impact', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        /* HUD UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px 30px;
+        }
+        .top-hud {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .stat-card {
+            background: rgba(15, 23, 42, 0.75);
+            border: 3px solid #f59e0b;
+            backdrop-filter: blur(8px);
+            padding: 10px 22px;
+            border-radius: 16px;
+            color: #ffffff;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+        }
+        .stat-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+        }
+        .stat-value {
+            font-size: 28px;
+            color: #fbbf24;
+            text-shadow: 2px 2px 0px #000;
+        }
+        /* Active Power-up Timers */
+        #powerup-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .powerup-bar-wrap {
+            width: 180px;
+            background: rgba(0,0,0,0.6);
+            border: 2px solid #38bdf8;
+            border-radius: 10px;
+            overflow: hidden;
+            padding: 2px;
+            display: none;
+        }
+        .powerup-bar-fill {
+            height: 12px;
+            background: linear-gradient(90deg, #38bdf8, #0284c7);
+            border-radius: 6px;
+            width: 100%;
+            transition: width 0.1s linear;
+        }
+        .powerup-label {
+            font-size: 11px;
+            color: #fff;
+            text-shadow: 1px 1px 0px #000;
+            margin-bottom: 2px;
+        }
+
+        #warning-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 16px solid rgba(239, 68, 68, 0.7);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        /* Controls / Double-tap Notice */
+        #hoverboard-prompt {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.85);
+            border: 2px solid #22c55e;
+            color: #22c55e;
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 14px;
+            letter-spacing: 1px;
+        }
+
+        /* Game Over Modal */
+        #game-over-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(12px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+        #game-over-modal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-title {
+            font-size: 64px;
+            color: #ef4444;
+            text-shadow: 4px 4px 0px #000;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+        .modal-stats {
+            font-size: 22px;
+            color: #cbd5e1;
+            margin-bottom: 30px;
+            text-align: center;
+            line-height: 1.8;
+            font-family: sans-serif;
+        }
+        .btn-restart {
+            background: linear-gradient(135deg, #22c55e, #15803d);
+            border: none;
+            padding: 16px 48px;
+            font-size: 22px;
+            color: #ffffff;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 10px 25px rgba(34, 197, 94, 0.4);
+            text-shadow: 1px 1px 0px #000;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn-restart:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 15px 35px rgba(34, 197, 94, 0.6);
+        }
+    </style>
+    <!-- Include Three.js via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+    <div id="warning-overlay"></div>
+
+    <div id="ui-layer">
+        <div class="top-hud">
+            <div>
+                <div class="stat-card">
+                    <div class="stat-label">Score</div>
+                    <div class="stat-value" id="score-val">0</div>
+                </div>
+                <div id="powerup-container">
+                    <div class="powerup-bar-wrap" id="wrap-hoverboard">
+                        <div class="powerup-label">HOVERBOARD SHIELD</div>
+                        <div class="powerup-bar-fill" id="bar-hoverboard"></div>
+                    </div>
+                    <div class="powerup-bar-wrap" id="wrap-jetpack">
+                        <div class="powerup-label">JETPACK SKY-LANE</div>
+                        <div class="powerup-bar-fill" id="bar-jetpack" style="background: linear-gradient(90deg, #eab308, #ca8a04);"></div>
+                    </div>
+                    <div class="powerup-bar-wrap" id="wrap-magnet">
+                        <div class="powerup-label">COIN MAGNET</div>
+                        <div class="powerup-bar-fill" id="bar-magnet" style="background: linear-gradient(90deg, #ef4444, #b91c1c);"></div>
+                    </div>
+                    <div class="powerup-bar-wrap" id="wrap-sneakers">
+                        <div class="powerup-label">SUPER SNEAKERS</div>
+                        <div class="powerup-bar-fill" id="bar-sneakers" style="background: linear-gradient(90deg, #22c55e, #15803d);"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-label">Coins</div>
+                <div class="stat-value" id="coin-val">0</div>
+            </div>
+        </div>
+
+        <div id="hoverboard-prompt">PRESS <b>SPACE</b> OR <b>DOUBLE-TAP UP</b> FOR HOVERBOARD</div>
+    </div>
+
+    <div id="game-over-modal">
+        <div class="modal-title">BUSTED!</div>
+        <div class="modal-stats" id="final-stats">
+            Score: 0<br>
+            Coins Collected: 0
+        </div>
+        <button class="btn-restart" onclick="restartGame()">RUN AGAIN</button>
+    </div>
+
+<script>
+// ============================================================================
+// CONSTANTS & ENGINE CONFIGURATION
+// ============================================================================
+const LANES = [-3.5, 0, 3.5]; // Left, Middle, Right lane X coords
+const TRAIN_HEIGHT = 3.2;
+const SKY_HEIGHT = 12.0;
+const INITIAL_SPEED = 32.0;
+const MAX_SPEED = 75.0;
+const ACCELERATION = 0.4;
+const GRAVITY = -60.0;
+const JUMP_FORCE = 19.5;
+const CHUNK_SIZE = 60.0;
+
+// ============================================================================
+// THREE.JS SCENE SETUP
+// ============================================================================
+const canvas = document.getElementById("gameCanvas");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0284c7); // Sky blue
+scene.fog = new THREE.FogExp2(0x0284c7, 0.008);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xfffbe1, 1.1);
+dirLight.position.set(30, 60, 20);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 150;
+const d = 35;
+dirLight.shadow.camera.left = -d; dirLight.shadow.camera.right = d;
+dirLight.shadow.camera.top = d; dirLight.shadow.camera.bottom = -d;
+scene.add(dirLight);
+
+// ============================================================================
+// MATERIALS & TEXTURE GENERATOR
+// ============================================================================
+function createTrackTexture() {
+    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#334155'; ctx.fillRect(0, 0, 128, 128);
+    // Railway Ties
+    ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 16, 128, 20); ctx.fillRect(0, 80, 128, 20);
+    // Steel Rails
+    ctx.fillStyle = '#94a3b8'; ctx.fillRect(20, 0, 10, 128); ctx.fillRect(98, 0, 10, 128);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, 4);
+    return tex;
+}
+
+const trackMat = new THREE.MeshStandardMaterial({ map: createTrackTexture(), roughness: 0.8 });
+const trainMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.5, roughness: 0.3 });
+const trainStripeMat = new THREE.MeshStandardMaterial({ color: 0xeab308 });
+const barrierMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+const coinMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.2 });
+
+// ============================================================================
+// GAME STATE MANAGEMENT
+// ============================================================================
+let gameState = {
+    running: false,
+    score: 0,
+    coins: 0,
+    speed: INITIAL_SPEED,
+    stumbleLevel: 0,
+    stumbleTimer: 0,
+    lastTapTime: 0
+};
+
+// ============================================================================
+// PLAYER ENTITY & MECHANICS
+// ============================================================================
+class Player {
+    constructor() {
+        this.mesh = new THREE.Group();
+
+        // Player Body Capsule Representation
+        const bodyGeo = new THREE.CylinderGeometry(0.55, 0.55, 1.7, 16);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.2 });
+        this.bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+        this.bodyMesh.position.y = 0.85;
+        this.bodyMesh.castShadow = true;
+        this.mesh.add(this.bodyMesh);
+
+        // Hoverboard Graphic (Visual Shield)
+        const boardGeo = new THREE.BoxGeometry(1.2, 0.15, 2.4);
+        const boardMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x15803d });
+        this.boardMesh = new THREE.Mesh(boardGeo, boardMat);
+        this.boardMesh.position.y = 0.08;
+        this.boardMesh.visible = false;
+        this.mesh.add(this.boardMesh);
+
+        // Jetpack Back Gadget Graphic
+        const packGeo = new THREE.BoxGeometry(0.8, 0.9, 0.4);
+        const packMat = new THREE.MeshStandardMaterial({ color: 0xeab308 });
+        this.jetpackMesh = new THREE.Mesh(packGeo, packMat);
+        this.jetpackMesh.position.set(0, 1.1, -0.4);
+        this.jetpackMesh.visible = false;
+        this.mesh.add(this.jetpackMesh);
+
+        scene.add(this.mesh);
+
+        // Power-Up State Timers
+        this.hoverboardTimer = 0;
+        this.jetpackTimer = 0;
+        this.magnetTimer = 0;
+        this.sneakersTimer = 0;
+
+        this.reset();
+    }
+
+    reset() {
+        this.lane = 1; // 0: Left, 1: Center, 2: Right
+        this.targetX = LANES[1];
+        this.x = LANES[1];
+        this.y = 0;
+        this.z = 0;
+        this.velocityY = 0;
+
+        this.isGrounded = true;
+        this.isOnTrain = false;
+        this.isSliding = false;
+        this.slideTimer = 0;
+
+        this.hoverboardTimer = 0;
+        this.jetpackTimer = 0;
+        this.magnetTimer = 0;
+        this.sneakersTimer = 0;
+
+        this.boardMesh.visible = false;
+        this.jetpackMesh.visible = false;
+
+        this.box = new THREE.Box3();
+        this.mesh.position.set(this.x, this.y, this.z);
+    }
+
+    update(dt) {
+        // --- Forward Z World Progression ---
+        this.z -= gameState.speed * dt;
+
+        // --- Power-up Timers Update ---
+        this.updatePowerups(dt);
+
+        // --- Lane Lerping (X Axis) ---
+        this.targetX = LANES[this.lane];
+        this.x += (this.targetX - this.x) * 18 * dt;
+
+        // --- Jetpack Sky Lane Flight Physics ---
+        if (this.jetpackTimer > 0) {
+            const targetY = SKY_HEIGHT;
+            this.y += (targetY - this.y) * 6 * dt;
+            this.velocityY = 0;
+            this.isGrounded = false;
+        } else {
+            // Standard Gravity Physics
+            this.velocityY += GRAVITY * dt;
+            this.y += this.velocityY * dt;
+
+            // Base Floor Collision
+            const minHeight = this.isOnTrain ? TRAIN_HEIGHT : 0;
+            if (this.y <= minHeight) {
+                this.y = minHeight;
+                this.velocityY = 0;
+                this.isGrounded = true;
+            } else {
+                this.isGrounded = false;
+            }
+        }
+
+        // --- Slide Hitbox Scaling ---
+        if (this.isSliding) {
+            this.slideTimer -= dt;
+            this.bodyMesh.scale.set(1, 0.45, 1);
+            this.bodyMesh.position.y = 0.4;
+            if (this.slideTimer <= 0) {
+                this.isSliding = false;
+                this.bodyMesh.scale.set(1, 1, 1);
+                this.bodyMesh.position.y = 0.85;
+            }
+        }
+
+        this.mesh.position.set(this.x, this.y, this.z);
+
+        // Dynamic Bounding Box Update
+        const height = this.isSliding ? 0.8 : 1.7;
+        this.box.setFromCenterAndSize(
+            new THREE.Vector3(this.x, this.y + height / 2, this.z),
+            new THREE.Vector3(0.9, height, 0.9)
+        );
+    }
+
+    updatePowerups(dt) {
+        if (this.hoverboardTimer > 0) {
+            this.hoverboardTimer -= dt;
+            this.boardMesh.visible = true;
+            updatePowerupUI("hoverboard", this.hoverboardTimer, 30);
+            if (this.hoverboardTimer <= 0) this.boardMesh.visible = false;
+        }
+        if (this.jetpackTimer > 0) {
+            this.jetpackTimer -= dt;
+            this.jetpackMesh.visible = true;
+            updatePowerupUI("jetpack", this.jetpackTimer, 10);
+            if (this.jetpackTimer <= 0) this.jetpackMesh.visible = false;
+        }
+        if (this.magnetTimer > 0) {
+            this.magnetTimer -= dt;
+            updatePowerupUI("magnet", this.magnetTimer, 15);
+        }
+        if (this.sneakersTimer > 0) {
+            this.sneakersTimer -= dt;
+            updatePowerupUI("sneakers", this.sneakersTimer, 15);
+        }
+    }
+
+    jump() {
+        if (this.isGrounded || this.isOnTrain) {
+            const force = this.sneakersTimer > 0 ? JUMP_FORCE * 1.4 : JUMP_FORCE;
+            this.velocityY = force;
+            this.isGrounded = false;
+            this.isOnTrain = false;
+        }
+    }
+
+    slide() {
+        if (this.jetpackTimer > 0) return;
+        if (!this.isGrounded) {
+            this.velocityY = -JUMP_FORCE * 1.6; // Quick drop
+        }
+        this.isSliding = true;
+        this.slideTimer = 0.8;
+    }
+
+    changeLane(dir) {
+        if (this.lane + dir >= 0 && this.lane + dir <= 2) {
+            this.lane += dir;
+        }
+    }
+
+    activateHoverboard() {
+        this.hoverboardTimer = 30.0; // 30s Shield
+    }
+}
+
+// ============================================================================
+// INSPECTOR & DOG CHASE ENTITY
+// ============================================================================
+class InspectorChase {
+    constructor() {
+        this.mesh = new THREE.Group();
+        // Inspector placeholder (Tall dark blue box)
+        const geo = new THREE.BoxGeometry(0.8, 1.8, 0.8);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a });
+        const inspectorMesh = new THREE.Mesh(geo, mat);
+        inspectorMesh.position.y = 0.9;
+        this.mesh.add(inspectorMesh);
+
+        // Dog placeholder (Small brown box)
+        const dogGeo = new THREE.BoxGeometry(0.5, 0.6, 0.9);
+        const dogMat = new THREE.MeshStandardMaterial({ color: 0x78350f });
+        const dogMesh = new THREE.Mesh(dogGeo, dogMat);
+        dogMesh.position.set(0.8, 0.3, 0.3);
+        this.mesh.add(dogMesh);
+
+        scene.add(this.mesh);
+        this.distanceBehind = 9.0;
+    }
+
+    update(player, dt) {
+        let targetDist = 9.0;
+        if (gameState.stumbleLevel === 1) targetDist = 2.2; // Right on your heels!
+        if (gameState.stumbleLevel >= 2) targetDist = 0.0; // Caught!
+
+        this.distanceBehind += (targetDist - this.distanceBehind) * 5.0 * dt;
+
+        this.mesh.position.set(
+            player.x,
+            player.y,
+            player.z + this.distanceBehind
+        );
+    }
+}
+
+// ============================================================================
+// PROCEDURAL TRACK & TRAIN YARD GENERATOR
+// ============================================================================
+class TrackGenerator {
+    constructor() {
+        this.chunks = [];
+        this.obstacles = [];
+        this.coins = [];
+        this.powerups = [];
+        this.nextSpawnZ = 0;
+    }
+
+    reset() {
+        for (let c of this.chunks) scene.remove(c);
+        for (let o of this.obstacles) scene.remove(o.mesh);
+        for (let cn of this.coins) scene.remove(cn.mesh);
+        for (let p of this.powerups) scene.remove(p.mesh);
+
+        this.chunks = [];
+        this.obstacles = [];
+        this.coins = [];
+        this.powerups = [];
+        this.nextSpawnZ = 10;
+
+        // Spawn Initial Safe Runway Chunks
+        for (let i = 0; i < 8; i++) {
+            this.spawnChunk(i < 3);
+        }
+    }
+
+    spawnChunk(isSafe = false) {
+        const chunkGroup = new THREE.Group();
+
+        // Ground Railway Path
+        const groundGeo = new THREE.PlaneGeometry(14, CHUNK_SIZE);
+        const ground = new THREE.Mesh(groundGeo, trackMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.set(0, 0, -CHUNK_SIZE / 2);
+        ground.receiveShadow = true;
+        chunkGroup.add(ground);
+
+        chunkGroup.position.z = this.nextSpawnZ;
+        scene.add(chunkGroup);
+        this.chunks.push(chunkGroup);
+
+        // Spawn Obstacles, Trains, and Powerups on Non-Safe Chunks
+        if (!isSafe) {
+            this.populateChunk(this.nextSpawnZ);
+        }
+
+        this.nextSpawnZ -= CHUNK_SIZE;
+    }
+
+    populateChunk(chunkZ) {
+        for (let laneIdx = 0; laneIdx < 3; laneIdx++) {
+            const laneX = LANES[laneIdx];
+            const rand = Math.random();
+
+            // --- 1. SPAWN TRAIN CARS (Stationary or Oncoming) ---
+            if (rand < 0.35) {
+                const trainLength = 22;
+                const isRampTrain = Math.random() < 0.5;
+
+                const trainGroup = new THREE.Group();
+                const bodyGeo = new THREE.BoxGeometry(2.8, TRAIN_HEIGHT, trainLength);
+                const body = new THREE.Mesh(bodyGeo, trainMat);
+                body.position.y = TRAIN_HEIGHT / 2;
+                body.castShadow = true;
+                trainGroup.add(body);
+
+                // Stripe detail
+                const stripeGeo = new THREE.BoxGeometry(2.85, 0.4, trainLength);
+                const stripe = new THREE.Mesh(stripeGeo, trainStripeMat);
+                stripe.position.y = TRAIN_HEIGHT * 0.65;
+                trainGroup.add(stripe);
+
+                // Optional Front Ramp
+                let rampMesh = null;
+                if (isRampTrain) {
+                    const rampGeo = new THREE.BoxGeometry(2.6, 0.1, 4.5);
+                    rampMesh = new THREE.Mesh(rampGeo, barrierMat);
+                    rampMesh.rotation.x = Math.PI / 8;
+                    rampMesh.position.set(0, 0.9, trainLength / 2 + 1.8);
+                    trainGroup.add(rampMesh);
+                }
+
+                const trainZ = chunkZ - CHUNK_SIZE / 2;
+                trainGroup.position.set(laneX, 0, trainZ);
+                scene.add(trainGroup);
+
+                const box = new THREE.Box3();
+                this.obstacles.push({
+                    mesh: trainGroup,
+                    type: "TRAIN",
+                    box,
+                    hasRamp: isRampTrain,
+                    rampBox: isRampTrain ? new THREE.Box3() : null,
+                    roofY: TRAIN_HEIGHT,
+                    centerZ: trainZ,
+                    length: trainLength
+                });
+            }
+
+            // --- 2. SPAWN BARRIERS (Low Jump / High Slide) ---
+            else if (rand < 0.65) {
+                const isHighBarrier = Math.random() < 0.5;
+                const barrierZ = chunkZ - (Math.random() * CHUNK_SIZE);
+
+                let geo, barrierMesh;
+                if (isHighBarrier) {
+                    // Archway obstacle (slide under)
+                    geo = new THREE.BoxGeometry(2.8, 1.2, 0.5);
+                    barrierMesh = new THREE.Mesh(geo, barrierMat);
+                    barrierMesh.position.set(laneX, 2.2, barrierZ);
+                } else {
+                    // Low barrier hurdle (jump over)
+                    geo = new THREE.BoxGeometry(2.8, 1.1, 0.5);
+                    barrierMesh = new THREE.Mesh(geo, barrierMat);
+                    barrierMesh.position.set(laneX, 0.55, barrierZ);
+                }
+
+                barrierMesh.castShadow = true;
+                scene.add(barrierMesh);
+
+                this.obstacles.push({
+                    mesh: barrierMesh,
+                    type: isHighBarrier ? "HIGH_BARRIER" : "LOW_BARRIER",
+                    box: new THREE.Box3()
+                });
+            }
+
+            // --- 3. SPAWN COIN ARRAYS ---
+            else if (rand < 0.88) {
+                const startZ = chunkZ - 10;
+                const coinGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.1, 12);
+                coinGeo.rotateX(Math.PI / 2);
+
+                for (let i = 0; i < 5; i++) {
+                    const coin = new THREE.Mesh(coinGeo, coinMat);
+                    coin.position.set(laneX, 1.1, startZ - (i * 2.5));
+                    scene.add(coin);
+                    this.coins.push({ mesh: coin, collected: false });
+                }
+            }
+
+            // --- 4. SPAWN POWER-UP ITEMS ---
+            else if (rand >= 0.88) {
+                const pTypes = ["JETPACK", "MAGNET", "SNEAKERS"];
+                const pType = pTypes[Math.floor(Math.random() * pTypes.length)];
+                
+                const pGeo = new THREE.SphereGeometry(0.5, 12, 12);
+                const pMat = new THREE.MeshStandardMaterial({
+                    color: pType === "JETPACK" ? 0xeab308 : (pType === "MAGNET" ? 0xef4444 : 0x22c55e),
+                    emissive: 0x333333
+                });
+                const pMesh = new THREE.Mesh(pGeo, pMat);
+                pMesh.position.set(laneX, 1.2, chunkZ - CHUNK_SIZE / 2);
+                scene.add(pMesh);
+
+                this.powerups.push({ mesh: pMesh, type: pType, collected: false });
+            }
+        }
+    }
+
+    update(player) {
+        // Recycle distant chunks
+        if (this.chunks.length > 0) {
+            const firstChunk = this.chunks[0];
+            if (firstChunk.position.z > player.z + 40) {
+                scene.remove(firstChunk);
+                this.chunks.shift();
+                this.spawnChunk();
+            }
+        }
+
+        // Animate Coins Rotation
+        for (let c of this.coins) {
+            if (!c.collected) c.mesh.rotation.y += 0.05;
+        }
+    }
+}
+
+// Helper to update Power-Up HUD Progress Bars
+function updatePowerupUI(type, current, max) {
+    const wrap = document.getElementById(`wrap-${type}`);
+    const bar = document.getElementById(`bar-${type}`);
+    if (current > 0) {
+        wrap.style.display = "block";
+        bar.style.width = `${(current / max) * 100}%`;
+    } else {
+        wrap.style.display = "none";
+    }
+}
+
+// ============================================================================
+// INSTANTIATION & INPUT LISTENERS
+// ============================================================================
+const player = new Player();
+const inspector = new InspectorChase();
+const track = new TrackGenerator();
+
+window.addEventListener("keydown", (e) => {
+    if (!gameState.running) return;
+
+    switch (e.code) {
+        case "KeyA":
+        case "ArrowLeft":
+            player.changeLane(-1);
+            break;
+        case "KeyD":
+        case "ArrowRight":
+            player.changeLane(1);
+            break;
+        case "KeyW":
+        case "ArrowUp":
+            // Double-tap Up detection for Hoverboard
+            const now = performance.now();
+            if (now - gameState.lastTapTime < 280) {
+                player.activateHoverboard();
+            } else {
+                player.jump();
+            }
+            gameState.lastTapTime = now;
+            break;
+        case "KeyS":
+        case "ArrowDown":
+            player.slide();
+            break;
+        case "Space":
+            player.activateHoverboard();
+            break;
+    }
+});
+
+// ============================================================================
+// COLLISION DETECTOR & PHYSICS ENGINE
+// ============================================================================
+function checkCollisions() {
+    // --- Magnet Coin Attractor Logic ---
+    if (player.magnetTimer > 0) {
+        for (let c of track.coins) {
+            if (!c.collected) {
+                const dist = player.mesh.position.distanceTo(c.mesh.position);
+                if (dist < 14.0) {
+                    c.mesh.position.lerp(player.mesh.position, 0.22);
+                }
+            }
+        }
+    }
+
+    // --- Coin Collection Check ---
+    for (let c of track.coins) {
+        if (!c.collected) {
+            if (player.mesh.position.distanceTo(c.mesh.position) < 1.4) {
+                c.collected = true;
+                scene.remove(c.mesh);
+                gameState.coins++;
+                document.getElementById("coin-val").innerText = gameState.coins;
+            }
+        }
+    }
+
+    // --- Power-up Collection Check ---
+    for (let p of track.powerups) {
+        if (!p.collected) {
+            if (player.mesh.position.distanceTo(p.mesh.position) < 1.5) {
+                p.collected = true;
+                scene.remove(p.mesh);
+                if (p.type === "JETPACK") player.jetpackTimer = 10.0;
+                if (p.type === "MAGNET") player.magnetTimer = 15.0;
+                if (p.type === "SNEAKERS") player.sneakersTimer = 15.0;
+            }
+        }
+    }
+
+    // If Jetpack Active, Ignore Obstacles
+    if (player.jetpackTimer > 0) return;
+
+    // --- Obstacle & Train Collisions ---
+    player.isOnTrain = false;
+
+    for (let o of track.obstacles) {
+        o.box.setFromObject(o.mesh);
+
+        if (player.box.intersectsBox(o.box)) {
+            
+            // 1. Train Mechanics (Roof Landing & Ramps)
+            if (o.type === "TRAIN") {
+                // Check if landing on train roof
+                if (player.velocityY <= 0 && player.y >= TRAIN_HEIGHT - 0.4) {
+                    player.isOnTrain = true;
+                    player.y = TRAIN_HEIGHT;
+                    player.velocityY = 0;
+                    player.isGrounded = true;
+                    continue;
+                }
+
+                // Check front ramp interaction
+                if (o.hasRamp && player.lane === LANES.indexOf(o.mesh.position.x)) {
+                    // Smoothly auto-climb ramp to roof
+                    player.y = Math.min(TRAIN_HEIGHT, player.y + 0.35);
+                    if (player.y >= TRAIN_HEIGHT - 0.2) player.isOnTrain = true;
+                    continue;
+                }
+
+                // Head-on Collision with Train
+                handleCrash("Crashed into a Train!");
+                return;
+            }
+
+            // 2. High Barrier Clearance (Slide Under)
+            if (o.type === "HIGH_BARRIER") {
+                if (player.isSliding) continue; // Safely slid under!
+                handleCrash("Hit a High Barrier!");
+                return;
+            }
+
+            // 3. Low Barrier Clearance (Jump Over)
+            if (o.type === "LOW_BARRIER") {
+                if (!player.isGrounded && player.y > 0.8) continue; // Safely jumped over!
+                
+                // Minor hurdle stumble penalty
+                triggerStumble();
+                scene.remove(o.mesh);
+                o.mesh.position.set(0, -999, 0);
+            }
+        }
+    }
+}
+
+function handleCrash(reason) {
+    // If Hoverboard shield active, consume shield instead of dying
+    if (player.hoverboardTimer > 0) {
+        player.hoverboardTimer = 0;
+        updatePowerupUI("hoverboard", 0, 30);
+        // Momentary invincibility & bounce back
+        player.z += 4.0;
+        return;
+    }
+
+    gameOver(reason);
+}
+
+function triggerStumble() {
+    gameState.stumbleLevel++;
+    gameState.stumbleTimer = 5.0; // 5s to escape before inspector recedes
+
+    const warn = document.getElementById("warning-overlay");
+    warn.style.opacity = "1";
+    setTimeout(() => warn.style.opacity = "0", 350);
+
+    if (gameState.stumbleLevel >= 2) {
+        gameOver("Busted by the Inspector!");
+    }
+}
+
+function gameOver(reason) {
+    gameState.running = false;
+    document.getElementById("game-over-modal").classList.add("active");
+    document.getElementById("final-stats").innerHTML = `
+        <b>${reason}</b><br><br>
+        Final Score: <b>${Math.floor(gameState.score)}</b><br>
+        Coins Collected: <b>${gameState.coins}</b>
+    `;
+}
+
+function restartGame() {
+    gameState = {
+        running: true,
+        score: 0,
+        coins: 0,
+        speed: INITIAL_SPEED,
+        stumbleLevel: 0,
+        stumbleTimer: 0,
+        lastTapTime: 0
+    };
+
+    document.getElementById("game-over-modal").classList.remove("active");
+    document.getElementById("score-val").innerText = "0";
+    document.getElementById("coin-val").innerText = "0";
+
+    player.reset();
+    track.reset();
+}
+
+// ============================================================================
+// CAMERA SYSTEM
+// ============================================================================
+function updateCamera(dt) {
+    const targetCamPos = new THREE.Vector3(
+        player.x * 0.7, // Subtle lateral lag
+        player.y + 4.8,
+        player.z + 8.5
+    );
+
+    camera.position.lerp(targetCamPos, 12.0 * dt);
+    camera.lookAt(new THREE.Vector3(player.x * 0.3, player.y + 1.5, player.z - 10));
+}
+
+// ============================================================================
+// MAIN GAME LOOP
+// ============================================================================
+const clock = new THREE.Clock();
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    const dt = Math.min(clock.getDelta(), 0.1);
+
+    if (gameState.running) {
+        // Speed & Score Multipliers
+        gameState.speed = Math.min(MAX_SPEED, gameState.speed + ACCELERATION * dt);
+        gameState.score += gameState.speed * dt * 0.8;
+        document.getElementById("score-val").innerText = Math.floor(gameState.score);
+
+        // Stumble Inspector Recovery Timer
+        if (gameState.stumbleLevel > 0) {
+            gameState.stumbleTimer -= dt;
+            if (gameState.stumbleTimer <= 0) {
+                gameState.stumbleLevel = 0;
+            }
+        }
+
+        // Entity Updates
+        player.update(dt);
+        inspector.update(player, dt);
+        track.update(player);
+
+        // Physics Checks
+        checkCollisions();
+    }
+
+    updateCamera(dt);
+    renderer.render(scene, camera);
+}
+
+// Window Resizing
+window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Start Prototype Engine
+restartGame();
+animate();
+
+</script>
+</body>
+</html>

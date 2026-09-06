@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Temple Run 3D - Engine Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050811;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        /* HUD UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 25px;
+        }
+        .stats-container {
+            display: flex;
+            gap: 20px;
+        }
+        .stat-card {
+            background: rgba(15, 23, 42, 0.75);
+            border: 2px solid rgba(234, 179, 8, 0.4);
+            backdrop-filter: blur(8px);
+            padding: 12px 24px;
+            border-radius: 12px;
+            color: #ffffff;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        .stat-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #94a3b8;
+            margin-bottom: 2px;
+        }
+        .stat-value {
+            font-size: 26px;
+            font-weight: 800;
+            color: #facc15;
+            text-shadow: 0 0 10px rgba(250, 204, 21, 0.3);
+        }
+        #turn-prompt {
+            position: absolute;
+            top: 30%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 36px;
+            font-weight: 900;
+            color: #ef4444;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 30px;
+            border-radius: 50px;
+            border: 3px solid #ef4444;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            display: none;
+            animation: pulse 0.4s infinite alternate;
+        }
+        #warning-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 15px solid rgba(239, 68, 68, 0.6);
+            box-sizing: border-box;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        @keyframes pulse {
+            from { transform: translate(-50%, -50%) scale(0.95); }
+            to { transform: translate(-50%, -50%) scale(1.08); }
+        }
+        /* Game Over Modal */
+        #game-over-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+        #game-over-modal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-title {
+            font-size: 56px;
+            font-weight: 900;
+            color: #ef4444;
+            letter-spacing: 3px;
+            margin-bottom: 10px;
+        }
+        .modal-stats {
+            font-size: 20px;
+            color: #cbd5e1;
+            margin-bottom: 30px;
+            text-align: center;
+            line-height: 1.6;
+        }
+        .btn-restart {
+            background: linear-gradient(135deg, #eab308, #ca8a04);
+            border: none;
+            padding: 16px 42px;
+            font-size: 18px;
+            font-weight: 800;
+            color: #0f172a;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 10px 25px rgba(234, 179, 8, 0.4);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .btn-restart:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 15px 30px rgba(234, 179, 8, 0.6);
+        }
+        #controls-hint {
+            position: absolute;
+            bottom: 25px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #94a3b8;
+            font-size: 13px;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 8px 18px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+    </style>
+    <!-- Include Three.js via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="warning-overlay"></div>
+
+    <div id="ui-layer">
+        <div class="stats-container">
+            <div class="stat-card">
+                <div class="stat-label">Distance</div>
+                <div class="stat-value" id="dist-val">0m</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Coins</div>
+                <div class="stat-value" id="coin-val">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Multiplier</div>
+                <div class="stat-value" id="speed-val">1.0x</div>
+            </div>
+        </div>
+        <div id="turn-prompt">TURN NOW!</div>
+        <div id="controls-hint">
+            <b>A/D or ←/→</b>: Switch Lane / Turn &nbsp;|&nbsp; <b>W or ↑</b>: Jump &nbsp;|&nbsp; <b>S or ↓</b>: Slide
+        </div>
+    </div>
+
+    <div id="game-over-modal">
+        <div class="modal-title">RUN ENDED</div>
+        <div class="modal-stats" id="final-stats">
+            Distance: 0 meters<br>
+            Coins Collected: 0
+        </div>
+        <button class="btn-restart" onclick="restartGame()">RUN AGAIN</button>
+    </div>
+
+<script>
+// ============================================================================
+// CONSTANTS & GAME CONFIGURATION
+// ============================================================================
+const LANE_WIDTH = 3.0;
+const TILE_SIZE = 24.0;
+const INITIAL_SPEED = 28.0;
+const MAX_SPEED = 65.0;
+const ACCELERATION = 0.35;
+const GRAVITY = -65.0;
+const JUMP_FORCE = 20.0;
+const TURN_WINDOW = 12.0; // Distance window to trigger a 90-degree turn
+
+// Directions enum
+const DIR = {
+    NORTH: new THREE.Vector3(0, 0, -1),
+    EAST:  new THREE.Vector3(1, 0, 0),
+    SOUTH: new THREE.Vector3(0, 0, 1),
+    WEST:  new THREE.Vector3(-1, 0, 0)
+};
+
+// ============================================================================
+// ENGINE & SCENE SETUP
+// ============================================================================
+const canvas = document.getElementById("gameCanvas");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0e17);
+scene.fog = new THREE.FogExp2(0x0a0e17, 0.012);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffecd1, 1.2);
+dirLight.position.set(40, 80, 20);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 150;
+const d = 40;
+dirLight.shadow.camera.left = -d;
+dirLight.shadow.camera.right = d;
+dirLight.shadow.camera.top = d;
+dirLight.shadow.camera.bottom = -d;
+scene.add(dirLight);
+
+// ============================================================================
+// PROCEDURAL TEXTURE GENERATORS (NO EXTERNAL ASSETS REQUIRED)
+// ============================================================================
+function createStoneTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#2d3748'; ctx.fillRect(0, 0, 256, 256);
+    
+    // Noise/Paving pattern
+    ctx.strokeStyle = '#1a202c'; ctx.lineWidth = 4;
+    for(let i=0; i<256; i+=32) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 256); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(256, i); ctx.stroke();
+    }
+    for(let i=0; i<400; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? '#4a5568' : '#1a202c';
+        ctx.fillRect(Math.random()*256, Math.random()*256, 4, 4);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+}
+
+const stoneTexture = createStoneTexture();
+const pathMaterial = new THREE.MeshStandardMaterial({ map: stoneTexture, roughness: 0.8 });
+const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+const obstacleMaterial = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+const coinMaterial = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.2 });
+
+// ============================================================================
+// GAME STATE MANAGEMENT
+// ============================================================================
+let gameState = {
+    running: false,
+    distance: 0,
+    coins: 0,
+    speed: INITIAL_SPEED,
+    stumbleLevel: 0, // 0: Normal, 1: Monkey Close, 2: Caught
+    stumbleTimer: 0
+};
+
+// ============================================================================
+// PLAYER ENTITY & MECHANICS
+// ============================================================================
+class Player {
+    constructor() {
+        this.mesh = new THREE.Group();
+        
+        // Body Graphic (Color-coded Capsule placeholder)
+        const bodyGeo = new THREE.CylinderGeometry(0.6, 0.6, 1.8, 16);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 });
+        this.bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+        this.bodyMesh.position.y = 0.9;
+        this.bodyMesh.castShadow = true;
+        this.mesh.add(this.bodyMesh);
+
+        // Head
+        const headGeo = new THREE.SphereGeometry(0.4, 16, 16);
+        const headMat = new THREE.MeshStandardMaterial({ color: 0xffedd5 });
+        const headMesh = new THREE.Mesh(headGeo, headMat);
+        headMesh.position.y = 2.0;
+        this.mesh.add(headMesh);
+
+        scene.add(this.mesh);
+
+        this.reset();
+    }
+
+    reset() {
+        this.position = new THREE.Vector3(0, 0, 0);
+        this.mesh.position.set(0, 0, 0);
+        this.mesh.rotation.set(0, 0, 0);
+
+        this.currentDir = DIR.NORTH.clone();
+        this.targetDir = DIR.NORTH.clone();
+        this.lane = 0; // -1: Left, 0: Center, 1: Right
+        this.laneOffset = 0;
+        
+        // Physics & Action States
+        this.velocityY = 0;
+        this.isGrounded = true;
+        this.isSliding = false;
+        this.slideTimer = 0;
+
+        // Dynamic Bounding Hitbox
+        this.box = new THREE.Box3();
+    }
+
+    update(dt) {
+        // --- Forward Movement ---
+        const moveStep = this.currentDir.clone().multiplyScalar(gameState.speed * dt);
+        this.position.add(moveStep);
+
+        // --- Lane Lerping ---
+        const targetLaneOffset = this.lane * LANE_WIDTH;
+        this.laneOffset += (targetLaneOffset - this.laneOffset) * 15 * dt;
+
+        // Compute Lateral Vector relative to direction
+        const rightVec = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), this.currentDir).negate();
+        
+        // Actual World Position = Center Axis + Lateral Offset + Vertical Jump
+        const finalPos = this.position.clone().add(rightVec.clone().multiplyScalar(this.laneOffset));
+        finalPos.y += this.position.y;
+
+        this.mesh.position.copy(finalPos);
+
+        // --- Jump Physics ---
+        if (!this.isGrounded) {
+            this.velocityY += GRAVITY * dt;
+            this.position.y += this.velocityY * dt;
+
+            if (this.position.y <= 0) {
+                this.position.y = 0;
+                this.velocityY = 0;
+                this.isGrounded = true;
+            }
+        }
+
+        // --- Slide Physics & Scale Hitbox ---
+        if (this.isSliding) {
+            this.slideTimer -= dt;
+            this.bodyMesh.scale.set(1.2, 0.4, 1.2);
+            this.bodyMesh.position.y = 0.4;
+            if (this.slideTimer <= 0) {
+                this.isSliding = false;
+                this.bodyMesh.scale.set(1, 1, 1);
+                this.bodyMesh.position.y = 0.9;
+            }
+        }
+
+        // --- Smooth Direction Turning Rotation ---
+        const targetAngle = Math.atan2(-this.currentDir.x, -this.currentDir.z);
+        // Lerp rotation y
+        let diff = targetAngle - this.mesh.rotation.y;
+        // Normalize angle difference
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        this.mesh.rotation.y += diff * 18 * dt;
+
+        // Update Hitbox
+        const sizeY = this.isSliding ? 0.8 : 1.8;
+        this.box.setFromCenterAndSize(
+            this.mesh.position.clone().add(new THREE.Vector3(0, sizeY / 2, 0)),
+            new THREE.Vector3(1.0, sizeY, 1.0)
+        );
+    }
+
+    jump() {
+        if (this.isGrounded && !this.isSliding) {
+            this.velocityY = JUMP_FORCE;
+            this.isGrounded = false;
+        }
+    }
+
+    slide() {
+        if (this.isGrounded && !this.isSliding) {
+            this.isSliding = true;
+            this.slideTimer = 0.75; // Slide duration
+        } else if (!this.isGrounded) {
+            // Fast fall override
+            this.velocityY = -JUMP_FORCE * 1.5;
+        }
+    }
+
+    changeLane(dir) { // -1 Left, 1 Right
+        if (this.lane + dir >= -1 && this.lane + dir <= 1) {
+            this.lane += dir;
+        }
+    }
+}
+
+// ============================================================================
+// DEMON MONKEY PURSUER (PURSUIT AI)
+// ============================================================================
+class DemonMonkey {
+    constructor() {
+        this.mesh = new THREE.Group();
+        
+        // Ominous Red/Black Monster Primitive
+        const geo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.2 });
+        const body = new THREE.Mesh(geo, mat);
+        body.position.y = 0.8;
+        this.mesh.add(body);
+
+        // Glowing Red Eyes
+        const eyeGeo = new THREE.SphereGeometry(0.15, 8, 8);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+        const eye1 = new THREE.Mesh(eyeGeo, eyeMat); eye1.position.set(-0.4, 1.2, -0.8);
+        const eye2 = new THREE.Mesh(eyeGeo, eyeMat); eye2.position.set(0.4, 1.2, -0.8);
+        this.mesh.add(eye1); this.mesh.add(eye2);
+
+        scene.add(this.mesh);
+        this.distanceBehind = 14.0; // Normal distance
+    }
+
+    update(player, dt) {
+        // Stumble logic alters follow distance
+        let targetDist = 12.0;
+        if (gameState.stumbleLevel === 1) targetDist = 3.5; // Lurking right behind!
+        if (gameState.stumbleLevel >= 2) targetDist = 0.0; // Captures player!
+
+        this.distanceBehind += (targetDist - this.distanceBehind) * 4.0 * dt;
+
+        // Position monkey behind player relative to player direction
+        const backVec = player.currentDir.clone().negate().multiplyScalar(this.distanceBehind);
+        const rightVec = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), player.currentDir).negate();
+        
+        const pos = player.position.clone()
+            .add(backVec)
+            .add(rightVec.multiplyScalar(player.laneOffset));
+        
+        this.mesh.position.copy(pos);
+        this.mesh.rotation.y = player.mesh.rotation.y;
+    }
+}
+
+// ============================================================================
+// PROCEDURAL TRACK & OBSTACLE GENERATOR
+// ============================================================================
+class TrackManager {
+    constructor() {
+        this.tiles = [];
+        this.obstacles = [];
+        this.coins = [];
+        this.spawnPoint = new THREE.Vector3(0, 0, 0);
+        this.currentDir = DIR.NORTH.clone();
+        this.turnPendingTile = null;
+    }
+
+    reset() {
+        // Clear old meshes
+        for (let t of this.tiles) scene.remove(t.mesh);
+        for (let o of this.obstacles) scene.remove(o.mesh);
+        for (let c of this.coins) scene.remove(c.mesh);
+
+        this.tiles = [];
+        this.obstacles = [];
+        this.coins = [];
+
+        this.spawnPoint.set(0, 0, 0);
+        this.currentDir = DIR.NORTH.clone();
+        this.turnPendingTile = null;
+
+        // Initial straight track batch
+        for (let i = 0; i < 12; i++) {
+            this.spawnTile("STRAIGHT");
+        }
+    }
+
+    spawnTile(type = "STRAIGHT") {
+        const tileGroup = new THREE.Group();
+
+        // Pathways
+        const floorGeo = new THREE.BoxGeometry(11, 1, TILE_SIZE);
+        const floor = new THREE.Mesh(floorGeo, pathMaterial);
+        floor.position.y = -0.5;
+        floor.receiveShadow = true;
+        tileGroup.add(floor);
+
+        // Side Decorative Walls/Borders
+        const wallGeo = new THREE.BoxGeometry(1, 2, TILE_SIZE);
+        const wallL = new THREE.Mesh(wallGeo, wallMaterial); wallL.position.set(-5.5, 0.5, 0);
+        const wallR = new THREE.Mesh(wallGeo, wallMaterial); wallR.position.set(5.5, 0.5, 0);
+        tileGroup.add(wallL); tileGroup.add(wallR);
+
+        // Orientation & Placement
+        tileGroup.position.copy(this.spawnPoint);
+        const angle = Math.atan2(-this.currentDir.x, -this.currentDir.z);
+        tileGroup.rotation.y = angle;
+
+        const tileData = {
+            mesh: tileGroup,
+            center: this.spawnPoint.clone(),
+            dir: this.currentDir.clone(),
+            type: type,
+            turned: false
+        };
+
+        scene.add(tileGroup);
+        this.tiles.push(tileData);
+
+        // Spawn Obstacles & Collectibles on straight tiles
+        if (type === "STRAIGHT" && this.tiles.length > 4) {
+            this.spawnObstaclesAndCoins(tileData);
+        }
+
+        // Advance Spawn Point forward along current direction
+        this.spawnPoint.add(this.currentDir.clone().multiplyScalar(TILE_SIZE));
+
+        // Handle 90-Degree Turn Tile Spawning
+        if (type.startsWith("TURN")) {
+            tileData.turnType = type.endsWith("LEFT") ? "LEFT" : "RIGHT";
+            
+            // Pivot direction for subsequent tiles
+            const rotationMatrix = new THREE.Matrix4();
+            const rotAngle = tileData.turnType === "LEFT" ? Math.PI / 2 : -Math.PI / 2;
+            rotationMatrix.makeRotationY(rotAngle);
+            this.currentDir.applyMatrix4(rotationMatrix).round(); // Align cleanly to axis
+        }
+    }
+
+    spawnObstaclesAndCoins(tile) {
+        const rand = Math.random();
+
+        // --- SPAWN OBSTACLES ---
+        if (rand < 0.5) {
+            const lane = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
+            const obstacleType = Math.random() > 0.5 ? "LOW" : "HIGH";
+
+            let geo, mat = obstacleMaterial;
+            if (obstacleType === "LOW") {
+                geo = new THREE.BoxGeometry(LANE_WIDTH * 0.9, 1.0, 0.8); // Require Jump
+            } else {
+                geo = new THREE.BoxGeometry(LANE_WIDTH * 0.9, 1.8, 0.8); // Require Slide (Arch gap under)
+            }
+
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.castShadow = true;
+
+            // Position relative to tile local space
+            const localPos = new THREE.Vector3(lane * LANE_WIDTH, obstacleType === "LOW" ? 0.5 : 2.2, 0);
+            localPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), tile.mesh.rotation.y);
+            mesh.position.copy(tile.center).add(localPos);
+
+            const box = new THREE.Box3();
+            scene.add(mesh);
+
+            this.obstacles.push({ mesh, type: obstacleType, box, center: mesh.position });
+        }
+
+        // --- SPAWN COIN ARRAYS ---
+        else if (rand < 0.85) {
+            const lane = Math.floor(Math.random() * 3) - 1;
+            const coinGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 12);
+            coinGeo.rotateX(Math.PI / 2);
+
+            for (let i = -2; i <= 2; i++) {
+                const coinMesh = new THREE.Mesh(coinGeo, coinMaterial);
+                const localPos = new THREE.Vector3(lane * LANE_WIDTH, 1.2, i * 2.2);
+                localPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), tile.mesh.rotation.y);
+                coinMesh.position.copy(tile.center).add(localPos);
+
+                scene.add(coinMesh);
+                this.coins.push({ mesh: coinMesh, collected: false });
+            }
+        }
+    }
+
+    update(player) {
+        // --- Continuous Spawning / Cleanup Loop ---
+        if (this.tiles.length < 16) {
+            // Chance to spawn 90-degree turn vs straight tile
+            if (Math.random() < 0.22 && this.tiles.length > 8) {
+                const turnDir = Math.random() > 0.5 ? "TURN_LEFT" : "TURN_RIGHT";
+                this.spawnTile(turnDir);
+                // After turn, guarantee 3 straight tiles
+                for (let i = 0; i < 3; i++) this.spawnTile("STRAIGHT");
+            } else {
+                this.spawnTile("STRAIGHT");
+            }
+        }
+
+        // --- Remove Off-Screen Distant Tiles ---
+        if (this.tiles.length > 0) {
+            const firstTile = this.tiles[0];
+            const dist = player.position.distanceTo(firstTile.center);
+            if (dist > 180.0) {
+                scene.remove(firstTile.mesh);
+                this.tiles.shift();
+            }
+        }
+
+        // --- Turn Junction Detection ---
+        this.turnPendingTile = null;
+        document.getElementById("turn-prompt").style.display = "none";
+
+        for (let tile of this.tiles) {
+            if (tile.type.startsWith("TURN") && !tile.turned) {
+                const dist = player.position.distanceTo(tile.center);
+                if (dist < TURN_WINDOW) {
+                    this.turnPendingTile = tile;
+                    document.getElementById("turn-prompt").style.display = "block";
+                    break;
+                }
+            }
+        }
+
+        // Animate Coins
+        for (let c of this.coins) {
+            if (!c.collected) c.mesh.rotation.y += 3.0 * 0.016;
+        }
+    }
+}
+
+// ============================================================================
+// INSTANTIATION & INPUT CONTROLLER
+// ============================================================================
+const player = new Player();
+const monkey = new DemonMonkey();
+const track = new TrackManager();
+
+// Input Listeners
+window.addEventListener("keydown", (e) => {
+    if (!gameState.running) return;
+
+    switch (e.code) {
+        case "KeyA":
+        case "ArrowLeft":
+            handleLeftInput();
+            break;
+
+        case "KeyD":
+        case "ArrowRight":
+            handleRightInput();
+            break;
+
+        case "KeyW":
+        case "ArrowUp":
+            player.jump();
+            break;
+
+        case "KeyS":
+        case "ArrowDown":
+            player.slide();
+            break;
+    }
+});
+
+function handleLeftInput() {
+    // Priority 1: Check 90-degree Turn Junction Window
+    if (track.turnPendingTile && track.turnPendingTile.turnType === "LEFT") {
+        executeTurn("LEFT");
+    } else {
+        // Priority 2: Lane Shift
+        player.changeLane(-1);
+    }
+}
+
+function handleRightInput() {
+    if (track.turnPendingTile && track.turnPendingTile.turnType === "RIGHT") {
+        executeTurn("RIGHT");
+    } else {
+        player.changeLane(1);
+    }
+}
+
+function executeTurn(turnDirection) {
+    const tile = track.turnPendingTile;
+    tile.turned = true;
+
+    // Smoothly snap/align player onto center axis of new turned tile segment
+    player.position.copy(tile.center);
+    
+    // Rotate player heading vector 90 degrees
+    const rotationMatrix = new THREE.Matrix4();
+    const rotAngle = turnDirection === "LEFT" ? Math.PI / 2 : -Math.PI / 2;
+    rotationMatrix.makeRotationY(rotAngle);
+    player.currentDir.applyMatrix4(rotationMatrix).round();
+
+    // Reset relative lane target offset on turn
+    player.lane = 0;
+    player.laneOffset = 0;
+
+    document.getElementById("turn-prompt").style.display = "none";
+}
+
+// ============================================================================
+// COLLISION SYSTEM & GAME LOGIC
+// ============================================================================
+function checkCollisions() {
+    // --- 1. Obstacle Collision Check ---
+    for (let o of track.obstacles) {
+        o.box.setFromObject(o.mesh);
+
+        if (player.box.intersectsBox(o.box)) {
+            // Check slide/jump clearance exceptions
+            if (o.type === "LOW" && !player.isGrounded && player.position.y > 0.8) {
+                continue; // Cleared low obstacle by jumping over!
+            }
+            if (o.type === "HIGH" && player.isSliding) {
+                continue; // Cleared high obstacle by sliding under!
+            }
+
+            // Stumble / Crash Event Triggered
+            triggerStumble();
+            // Remove obstacle to prevent multi-collision loops
+            scene.remove(o.mesh);
+            o.mesh.position.set(0, -999, 0); 
+        }
+    }
+
+    // --- 2. Coin Pickup Check ---
+    for (let c of track.coins) {
+        if (!c.collected) {
+            const dist = player.mesh.position.distanceTo(c.mesh.position);
+            if (dist < 1.5) {
+                c.collected = true;
+                scene.remove(c.mesh);
+                gameState.coins += 1;
+                document.getElementById("coin-val").innerText = gameState.coins;
+            }
+        }
+    }
+
+    // --- 3. Missed Turn Check (Falling off the track edge) ---
+    for (let tile of track.tiles) {
+        if (tile.type.startsWith("TURN") && !tile.turned) {
+            // If player runs straight past turn center beyond window
+            const overstepDist = player.position.distanceTo(tile.center);
+            const dot = player.currentDir.dot(tile.dir);
+            
+            // If player passed turn center tile without turning:
+            if (overstepDist > TURN_WINDOW && dot > 0.9) {
+                gameOver("Fell Off Temple Cliff Edge!");
+            }
+        }
+    }
+}
+
+function triggerStumble() {
+    gameState.stumbleLevel++;
+    gameState.stumbleTimer = 6.0; // Seconds to recover distance if no more stumbles occur
+
+    // Visual red border warning
+    const warn = document.getElementById("warning-overlay");
+    warn.style.opacity = "1";
+    setTimeout(() => warn.style.opacity = "0", 400);
+
+    if (gameState.stumbleLevel >= 2) {
+        gameOver("Caught by Demon Monkey!");
+    }
+}
+
+function gameOver(reason) {
+    gameState.running = false;
+    document.getElementById("game-over-modal").classList.add("active");
+    document.getElementById("final-stats").innerHTML = `
+        <b>${reason}</b><br><br>
+        Distance Traveled: <b>${Math.floor(gameState.distance)} meters</b><br>
+        Coins Collected: <b>${gameState.coins}</b>
+    `;
+}
+
+function restartGame() {
+    gameState = {
+        running: true,
+        distance: 0,
+        coins: 0,
+        speed: INITIAL_SPEED,
+        stumbleLevel: 0,
+        stumbleTimer: 0
+    };
+
+    document.getElementById("game-over-modal").classList.remove("active");
+    document.getElementById("coin-val").innerText = "0";
+    document.getElementById("dist-val").innerText = "0m";
+
+    player.reset();
+    track.reset();
+}
+
+// ============================================================================
+// CAMERA FOLLOW SYSTEM
+// ============================================================================
+function updateCamera(dt) {
+    // Dynamic Third-Person Camera Offset relative to player direction
+    const camOffset = player.currentDir.clone().negate().multiplyScalar(10.0);
+    camOffset.y = 5.5; // Height above player
+
+    const targetCamPos = player.mesh.position.clone().add(camOffset);
+    camera.position.lerp(targetCamPos, 12.0 * dt);
+
+    const lookTarget = player.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+    camera.lookAt(lookTarget);
+}
+
+// ============================================================================
+// MAIN GAME ENGINE LOOP
+// ============================================================================
+const clock = new THREE.Clock();
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    const dt = Math.min(clock.getDelta(), 0.1); // Clamp delta time
+
+    if (gameState.running) {
+        // --- Progressive Difficulty Scaling ---
+        gameState.speed = Math.min(MAX_SPEED, gameState.speed + ACCELERATION * dt);
+        gameState.distance += gameState.speed * dt * 0.1;
+
+        // UI Updates
+        document.getElementById("dist-val").innerText = `${Math.floor(gameState.distance)}m`;
+        document.getElementById("speed-val").innerText = `${(gameState.speed / INITIAL_SPEED).toFixed(1)}x`;
+
+        // --- Stumble Recovery Timer ---
+        if (gameState.stumbleLevel > 0) {
+            gameState.stumbleTimer -= dt;
+            if (gameState.stumbleTimer <= 0) {
+                gameState.stumbleLevel = 0; // Monkey recedes back
+            }
+        }
+
+        // Entity Updates
+        player.update(dt);
+        monkey.update(player, dt);
+        track.update(player);
+
+        // System Updates
+        checkCollisions();
+    }
+
+    updateCamera(dt);
+    renderer.render(scene, camera);
+}
+
+// Window Resizing
+window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Boot Game
+restartGame();
+animate();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spider-Man: Web-Slinger Engine</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b0e14;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ffffff;
+            background: rgba(15, 23, 42, 0.85);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 13px;
+            text-align: center;
+            pointer-events: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .key {
+            background: #334155;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #38bdf8;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="instructions">
+        <span class="key">A</span>/<span class="key">D</span> Move | 
+        <span class="key">W</span> Jump / Climb | 
+        <span class="key">Shift</span> / <span class="key">R-Click</span> Web Swing (Hold) | 
+        <span class="key">J</span> / <span class="key">L-Click</span> Attack | 
+        <span class="key">K</span> Web Shot | 
+        <span class="key">L</span> Spider-Sense Dodge
+    </div>
+
+<script>
+// ============================================================================
+// GAME ENGINE & CONFIGURATION
+// ============================================================================
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+// Input Handling
+const keys = {};
+const mouse = { x: 0, y: 0, downLeft: false, downRight: false };
+
+window.addEventListener("keydown", (e) => keys[e.code] = true);
+window.addEventListener("keyup", (e) => keys[e.code] = false);
+window.addEventListener("mousemove", (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+});
+window.addEventListener("mousedown", (e) => {
+    if (e.button === 0) mouse.downLeft = true;
+    if (e.button === 2) mouse.downRight = true;
+});
+window.addEventListener("mouseup", (e) => {
+    if (e.button === 0) mouse.downLeft = false;
+    if (e.button === 2) mouse.downRight = false;
+});
+window.addEventListener("contextmenu", (e) => e.preventDefault());
+
+// ============================================================================
+// WORLD & CAMERA SYSTEM
+// ============================================================================
+const GRAVITY = 0.55;
+const GROUND_Y = 2000; // Deep pit floor
+
+class Camera {
+    constructor() {
+        this.x = 0;
+        this.y = 0;
+        this.targetX = 0;
+        this.targetY = 0;
+        this.lerp = 0.08;
+    }
+
+    update(target, playerFacingRight) {
+        // Look-ahead offset based on direction
+        const offset = playerFacingRight ? 150 : -150;
+        this.targetX = target.x - canvas.width / 2 + offset;
+        this.targetY = target.y - canvas.height / 2 - 50;
+
+        this.x += (this.targetX - this.x) * this.lerp;
+        this.y += (this.targetY - this.y) * this.lerp;
+    }
+}
+
+class Building {
+    constructor(x, width, height) {
+        this.x = x;
+        this.width = width;
+        this.height = height;
+        this.y = canvas.height - height;
+        this.color = "#1e293b";
+        this.edgeColor = "#334155";
+        this.windowColor = "rgba(253, 224, 71, 0.15)";
+        
+        // Generate procedural window grid
+        this.windows = [];
+        const rows = Math.floor(height / 40);
+        const cols = Math.floor(width / 30);
+        for(let r = 1; r < rows - 1; r++) {
+            for(let c = 1; c < cols - 1; c++) {
+                if(Math.random() > 0.4) {
+                    this.windows.push({ x: c * 30 + 8, y: r * 40 + 10, w: 14, h: 20 });
+                }
+            }
+        }
+    }
+
+    draw(ctx, camera) {
+        const screenX = this.x - camera.x;
+        const screenY = this.y - camera.y;
+
+        // Building Body
+        ctx.fillStyle = this.color;
+        ctx.fillRect(screenX, screenY, this.width, this.height + 1000);
+
+        // Building Outline
+        ctx.strokeStyle = this.edgeColor;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(screenX, screenY, this.width, this.height + 1000);
+
+        // Windows
+        ctx.fillStyle = this.windowColor;
+        for (let w of this.windows) {
+            ctx.fillRect(screenX + w.x, screenY + w.y, w.w, w.h);
+        }
+    }
+}
+
+class CityGenerator {
+    constructor() {
+        this.buildings = [];
+        this.nextX = -500;
+        this.generateInitial();
+    }
+
+    generateInitial() {
+        while (this.nextX < window.innerWidth + 1000) {
+            this.addBuilding();
+        }
+    }
+
+    addBuilding() {
+        const width = 250 + Math.random() * 200;
+        const height = 400 + Math.random() * 350;
+        const gap = 80 + Math.random() * 120;
+        
+        this.buildings.push(new Building(this.nextX, width, height));
+        this.nextX += width + gap;
+    }
+
+    update(camera) {
+        // Generate dynamically ahead
+        if (this.nextX - camera.x < canvas.width + 1000) {
+            this.addBuilding();
+        }
+        // Cleanup offscreen left
+        if (this.buildings.length > 0 && this.buildings[0].x + this.buildings[0].width < camera.x - 1000) {
+            this.buildings.shift();
+        }
+    }
+
+    draw(ctx, camera) {
+        for (let b of this.buildings) {
+            b.draw(ctx, camera);
+        }
+    }
+}
+
+// ============================================================================
+// PROJECTILES & PARTICLES
+// ============================================================================
+class WebShot {
+    constructor(x, y, dir) {
+        this.x = x;
+        this.y = y;
+        this.vx = dir * 22;
+        this.vy = (Math.random() - 0.5) * 2;
+        this.radius = 6;
+        this.active = true;
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+    }
+
+    draw(ctx, camera) {
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(this.x - camera.x, this.y - camera.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 8;
+    }
+}
+
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 8;
+        this.vy = (Math.random() - 0.5) * 8;
+        this.color = color;
+        this.life = 1.0;
+        this.decay = 0.03 + Math.random() * 0.03;
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= this.decay;
+    }
+
+    draw(ctx, camera) {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x - camera.x, this.y - camera.y, 4, 4);
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+// ============================================================================
+// PLAYER (SPIDER-MAN) ENTITY
+// ============================================================================
+class Player {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 32;
+        this.height = 54;
+        this.vx = 0;
+        this.vy = 0;
+
+        // Stats & Mechanics
+        this.health = 100;
+        this.maxHealth = 100;
+        this.webFluid = 100;
+        this.maxWebFluid = 100;
+        this.comboCount = 0;
+        this.comboTimer = 0;
+
+        // States
+        this.isGrounded = false;
+        this.isWallCrawling = false;
+        this.wallDir = 0; // -1 Left, 1 Right
+        this.isSwinging = false;
+        this.webAnchor = null;
+        this.ropeLength = 0;
+        this.facingRight = true;
+        this.state = "IDLE"; // IDLE, RUN, JUMP, SWING, CRAWL, ATTACK, HURT, DODGE
+
+        // Timers & Cooldowns
+        this.attackCooldown = 0;
+        this.attackFrame = 0;
+        this.invincibleTimer = 0;
+        this.spiderSenseActive = false;
+
+        // Mechanics Input Locks
+        this.dodgeKeyPressed = false;
+        this.attackKeyPressed = false;
+        this.shootKeyPressed = false;
+    }
+
+    update(city, enemies, particles) {
+        this.handleTimers();
+        this.handleInput(city, particles);
+        this.applyPhysics(city);
+        this.handleCollisions(city);
+        this.handleCombat(enemies, particles);
+        this.updateState();
+    }
+
+    handleTimers() {
+        if (this.comboTimer > 0) {
+            this.comboTimer--;
+            if (this.comboTimer === 0) this.comboCount = 0;
+        }
+        if (this.attackCooldown > 0) this.attackCooldown--;
+        if (this.invincibleTimer > 0) this.invincibleTimer--;
+
+        // Fluid recharge on ground
+        if (this.isGrounded && this.webFluid < this.maxWebFluid) {
+            this.webFluid = Math.min(this.maxWebFluid, this.webFluid + 0.8);
+        }
+    }
+
+    handleInput(city, particles) {
+        const moveLeft = keys["KeyA"] || keys["ArrowLeft"];
+        const moveRight = keys["KeyD"] || keys["ArrowRight"];
+        const moveUp = keys["KeyW"] || keys["ArrowUp"];
+        const moveDown = keys["KeyS"] || keys["ArrowDown"];
+        const jumpPressed = keys["Space"] || keys["KeyW"];
+        const swingHeld = keys["ShiftLeft"] || keys["ShiftRight"] || mouse.downRight;
+
+        // --- WALL CRAWLING MECHANIC ---
+        if (this.isWallCrawling) {
+            this.vx = 0;
+            this.vy = 0;
+            this.isSwinging = false;
+
+            if (moveUp) this.vy = -4;
+            if (moveDown) this.vy = 4;
+
+            // Jump off wall
+            if (jumpPressed) {
+                this.isWallCrawling = false;
+                this.vy = -10;
+                this.vx = -this.wallDir * 8;
+                this.facingRight = this.wallDir < 0;
+            }
+
+            // Detach if moving away from wall
+            if ((this.wallDir === -1 && moveRight) || (this.wallDir === 1 && moveLeft)) {
+                this.isWallCrawling = false;
+            }
+            return;
+        }
+
+        // --- WEB SWINGING MECHANIC ---
+        if (swingHeld && this.webFluid > 5) {
+            if (!this.isSwinging) {
+                this.attachWeb(city);
+            }
+        } else {
+            this.detachWeb();
+        }
+
+        if (this.isSwinging && this.webAnchor) {
+            this.webFluid -= 0.15;
+            
+            // Pendulum physics force application
+            const dx = this.x - this.webAnchor.x;
+            const dy = this.y - this.webAnchor.y;
+            const currentDist = Math.hypot(dx, dy);
+
+            // Swing Pumping (Control dynamic momentum)
+            if (moveRight) this.vx += 0.4;
+            if (moveLeft) this.vx -= 0.4;
+
+            if (currentDist > this.ropeLength) {
+                // Constrain player to rope length radius
+                const angle = Math.atan2(dy, dx);
+                this.x = this.webAnchor.x + Math.cos(angle) * this.ropeLength;
+                this.y = this.webAnchor.y + Math.sin(angle) * this.ropeLength;
+
+                // Dynamic velocity projection along normal line tangent
+                const tangentX = -Math.sin(angle);
+                const tangentY = Math.cos(angle);
+                const dot = this.vx * tangentX + this.vy * tangentY;
+
+                this.vx = tangentX * dot;
+                this.vy = tangentY * dot;
+            }
+
+            // Web Jump Release
+            if (jumpPressed) {
+                this.detachWeb();
+                this.vy = -12; // Swing jump boost
+                this.vx *= 1.2;
+            }
+        } else {
+            // --- STANDARD MOVEMENT ---
+            if (moveLeft) {
+                this.vx = Math.max(this.vx - 0.8, -8);
+                this.facingRight = false;
+            } else if (moveRight) {
+                this.vx = Math.min(this.vx + 0.8, 8);
+                this.facingRight = true;
+            } else {
+                this.vx *= this.isGrounded ? 0.82 : 0.95; // Ground friction vs air drag
+            }
+
+            // Normal Jump
+            if (jumpPressed && this.isGrounded) {
+                this.vy = -13;
+                this.isGrounded = false;
+            }
+        }
+
+        // --- SPIDER-SENSE DODGE ---
+        if (keys["KeyL"] && !this.dodgeKeyPressed) {
+            this.dodgeKeyPressed = true;
+            this.triggerDodge(particles);
+        } else if (!keys["KeyL"]) {
+            this.dodgeKeyPressed = false;
+        }
+    }
+
+    attachWeb(city) {
+        // Cast dynamic ray upwards/forward to detect roof attachments
+        const rayAngle = this.facingRight ? -Math.PI / 3 : -2 * Math.PI / 3;
+        const maxRayDist = 600;
+        let bestTarget = null;
+
+        for (let b of city.buildings) {
+            // Check top roof surface points
+            if (b.x - 100 < this.x && b.x + b.width + 100 > this.x) {
+                if (b.y < this.y - 50) {
+                    const targetX = Math.max(b.x, Math.min(b.x + b.width, this.x + (this.facingRight ? 150 : -150)));
+                    const targetY = b.y;
+                    const dist = Math.hypot(targetX - this.x, targetY - this.y);
+
+                    if (dist < maxRayDist) {
+                        bestTarget = { x: targetX, y: targetY };
+                    }
+                }
+            }
+        }
+
+        if (bestTarget) {
+            this.webAnchor = bestTarget;
+            this.ropeLength = Math.hypot(this.x - bestTarget.x, this.y - bestTarget.y);
+            this.isSwinging = true;
+            this.isGrounded = false;
+        }
+    }
+
+    detachWeb() {
+        this.isSwinging = false;
+        this.webAnchor = null;
+    }
+
+    triggerDodge(particles) {
+        this.invincibleTimer = 25; // Invincibility frames
+        this.state = "DODGE";
+        
+        // Backflip/Dash impulse
+        const dashDir = this.facingRight ? -1 : 1;
+        this.vx = dashDir * 10;
+        this.vy = -4;
+
+        // Particle effect ring
+        for(let i=0; i<12; i++) {
+            particles.push(new Particle(this.x + this.width/2, this.y + this.height/2, "#38bdf8"));
+        }
+    }
+
+    applyPhysics(city) {
+        if (!this.isWallCrawling) {
+            this.vy += GRAVITY;
+        }
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Deep pit death check
+        if (this.y > GROUND_Y) {
+            this.health = 0;
+        }
+    }
+
+    handleCollisions(city) {
+        this.isGrounded = false;
+
+        for (let b of city.buildings) {
+            // AABB Collision Check
+            if (this.x + this.width > b.x && this.x < b.x + b.width) {
+                // Landing on Roof
+                if (this.y + this.height >= b.y && this.y + this.height <= b.y + 25 && this.vy >= 0) {
+                    this.y = b.y - this.height;
+                    this.vy = 0;
+                    this.isGrounded = true;
+                    if (this.isSwinging) this.detachWeb();
+                }
+            }
+
+            // Vertical Wall Contacts (Wall Crawling Detection)
+            if (this.y + this.height > b.y && this.y < b.y + b.height) {
+                // Touch Left Wall
+                if (this.x + this.width >= b.x && this.x + this.width <= b.x + 12 && (keys["KeyD"] || keys["ArrowRight"])) {
+                    this.isWallCrawling = true;
+                    this.wallDir = 1;
+                    this.x = b.x - this.width;
+                }
+                // Touch Right Wall
+                else if (this.x <= b.x + b.width && this.x >= b.x + b.width - 12 && (keys["KeyA"] || keys["ArrowLeft"])) {
+                    this.isWallCrawling = true;
+                    this.wallDir = -1;
+                    this.x = b.x + b.width;
+                }
+            }
+        }
+    }
+
+    handleCombat(enemies, particles) {
+        // Melee Attack Input (J or Left-Click)
+        const attackInput = keys["KeyJ"] || mouse.downLeft;
+        if (attackInput && !this.attackKeyPressed && this.attackCooldown === 0) {
+            this.attackKeyPressed = true;
+            this.attackCooldown = 18;
+            this.attackFrame = 10;
+            this.state = "ATTACK";
+
+            this.comboCount++;
+            this.comboTimer = 120; // 2 seconds window
+
+            // Hitbox Check
+            const attackHitbox = {
+                x: this.facingRight ? this.x + this.width : this.x - 45,
+                y: this.y,
+                width: 45,
+                height: this.height
+            };
+
+            for (let e of enemies) {
+                if (e.active && this.checkAABB(attackHitbox, e)) {
+                    const damage = 15 + (this.comboCount % 3 === 0 ? 15 : 0); // Bonus hit on 3rd combo
+                    e.takeDamage(damage, this.facingRight ? 1 : -1, particles);
+                }
+            }
+        } else if (!attackInput) {
+            this.attackKeyPressed = false;
+        }
+
+        // Web Shot Input (K)
+        if (keys["KeyK"] && !this.shootKeyPressed && this.webFluid >= 15) {
+            this.shootKeyPressed = true;
+            this.webFluid -= 15;
+            projectiles.push(new WebShot(this.x + this.width/2, this.y + 15, this.facingRight ? 1 : -1));
+        } else if (!keys["KeyK"]) {
+            this.shootKeyPressed = false;
+        }
+    }
+
+    checkAABB(rect1, rect2) {
+        return rect1.x < rect2.x + rect2.width &&
+               rect1.x + rect1.width > rect2.x &&
+               rect1.y < rect2.y + rect2.height &&
+               rect1.y + rect1.height > rect2.y;
+    }
+
+    updateState() {
+        if (this.attackFrame > 0) {
+            this.attackFrame--;
+            return;
+        }
+        if (this.invincibleTimer > 15) return;
+
+        if (this.isWallCrawling) this.state = "CRAWL";
+        else if (this.isSwinging) this.state = "SWING";
+        else if (!this.isGrounded) this.state = "JUMP";
+        else if (Math.abs(this.vx) > 0.5) this.state = "RUN";
+        else this.state = "IDLE";
+    }
+
+    takeDamage(amount) {
+        if (this.invincibleTimer > 0) return; // Invincible during dodge
+        
+        this.health = Math.max(0, this.health - amount);
+        this.invincibleTimer = 30;
+        this.state = "HURT";
+        this.vy = -4;
+        this.vx = this.facingRight ? -6 : 6;
+    }
+
+    draw(ctx, camera) {
+        const screenX = this.x - camera.x;
+        const screenY = this.y - camera.y;
+
+        // Draw Dynamic Web Rope
+        if (this.isSwinging && this.webAnchor) {
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(screenX + this.width / 2, screenY + 10);
+            ctx.lineTo(this.webAnchor.x - camera.x, this.webAnchor.y - camera.y);
+            ctx.stroke();
+        }
+
+        // Draw Spider-Sense Warning Arcs
+        if (this.spiderSenseActive) {
+            ctx.strokeStyle = "#f59e0b";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(screenX + this.width / 2, screenY - 10, 22, Math.PI * 1.2, Math.PI * 1.8);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(screenX + this.width / 2, screenY - 18, 30, Math.PI * 1.3, Math.PI * 1.7);
+            ctx.stroke();
+        }
+
+        // Flash Invincibility
+        if (this.invincibleTimer % 4 >= 2) return;
+
+        ctx.save();
+        ctx.translate(screenX + this.width / 2, screenY + this.height / 2);
+        if (!this.facingRight) ctx.scale(-1, 1);
+
+        // --- SPIDER-MAN PROCEDURAL VECTOR ANIMATION GRAPHICS ---
+        const w = this.width;
+        const h = this.height;
+
+        // Suit Colors
+        const RED = "#dc2626";
+        const BLUE = "#2563eb";
+        const EYE = "#ffffff";
+
+        if (this.state === "SWING") {
+            // Diagonal Swing Pose
+            ctx.rotate(0.3);
+            ctx.fillStyle = BLUE; ctx.fillRect(-12, -20, 24, 35); // Legs/Torso
+            ctx.fillStyle = RED; ctx.fillRect(-12, -25, 24, 18);  // Chest
+            ctx.fillRect(-10, -38, 20, 16);                       // Head
+        } 
+        else if (this.state === "CRAWL") {
+            // Wall-Cling Crouch
+            ctx.rotate(Math.PI / 2);
+            ctx.fillStyle = RED; ctx.fillRect(-15, -15, 30, 15);
+            ctx.fillStyle = BLUE; ctx.fillRect(-12, 0, 24, 18);
+        }
+        else if (this.state === "ATTACK") {
+            // Punching Forward Pose
+            ctx.fillStyle = BLUE; ctx.fillRect(-10, -10, 20, 35);
+            ctx.fillStyle = RED; ctx.fillRect(-10, -25, 20, 18);
+            ctx.fillRect(-8, -38, 16, 15);
+            // Extended Arm
+            ctx.fillRect(5, -20, 25, 8);
+        }
+        else {
+            // Default Legs & Body (Idle / Run / Jump)
+            ctx.fillStyle = BLUE;
+            // Legs
+            ctx.fillRect(-12, 5, 10, 22);
+            ctx.fillRect(2, 5, 10, 22);
+            // Torso
+            ctx.fillStyle = RED;
+            ctx.fillRect(-12, -18, 24, 24);
+            // Head
+            ctx.fillRect(-10, -34, 20, 17);
+            // Eyes
+            ctx.fillStyle = EYE;
+            ctx.beginPath();
+            ctx.moveTo(2, -28); ctx.lineTo(8, -28); ctx.lineTo(4, -22); ctx.closePath();
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+}
+
+// ============================================================================
+// ENEMY AI CLASS
+// ============================================================================
+class Enemy {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 32;
+        this.height = 54;
+        this.vx = 0;
+        this.vy = 0;
+        this.health = 50;
+        this.maxHealth = 50;
+        this.active = true;
+
+        // States
+        this.state = "PATROL"; // PATROL, CHASE, TELEGRAPH, ATTACK, STUNNED
+        this.facingRight = Math.random() > 0.5;
+        this.stunTimer = 0;
+        this.telegraphTimer = 0;
+        this.attackCooldown = 0;
+        this.patrolTimer = 100;
+    }
+
+    update(player, city, particles) {
+        if (!this.active) return;
+
+        // Check Stun Lock (Web Shot)
+        if (this.stunTimer > 0) {
+            this.stunTimer--;
+            this.state = "STUNNED";
+            return;
+        }
+
+        if (this.attackCooldown > 0) this.attackCooldown--;
+
+        const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
+
+        // --- AI STATE MACHINE ---
+        switch (this.state) {
+            case "PATROL":
+                this.patrolTimer--;
+                this.vx = this.facingRight ? 1.5 : -1.5;
+                if (this.patrolTimer <= 0) {
+                    this.facingRight = !this.facingRight;
+                    this.patrolTimer = 100 + Math.random() * 100;
+                }
+                if (distToPlayer < 350) this.state = "CHASE";
+                break;
+
+            case "CHASE":
+                this.facingRight = player.x > this.x;
+                this.vx = this.facingRight ? 3 : -3;
+
+                if (distToPlayer < 55 && this.attackCooldown === 0) {
+                    this.state = "TELEGRAPH";
+                    this.telegraphTimer = 30; // 0.5 sec telegraph window for Spider-Sense
+                    this.vx = 0;
+                }
+                if (distToPlayer > 450) this.state = "PATROL";
+                break;
+
+            case "TELEGRAPH":
+                player.spiderSenseActive = true; // Trigger Spider-Sense indicator on player!
+                this.telegraphTimer--;
+                if (this.telegraphTimer <= 0) {
+                    this.state = "ATTACK";
+                    this.executeAttack(player, particles);
+                }
+                break;
+
+            case "ATTACK":
+                this.attackCooldown = 80;
+                this.state = "CHASE";
+                break;
+        }
+
+        // Apply Gravity & Movement
+        this.vy += GRAVITY;
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Platform Collisions
+        for (let b of city.buildings) {
+            if (this.x + this.width > b.x && this.x < b.x + b.width) {
+                if (this.y + this.height >= b.y && this.y + this.height <= b.y + 25) {
+                    this.y = b.y - this.height;
+                    this.vy = 0;
+                }
+            }
+        }
+
+        // Deep pit despawn
+        if (this.y > GROUND_Y) this.active = false;
+    }
+
+    executeAttack(player, particles) {
+        player.spiderSenseActive = false;
+        const distToPlayer = Math.hypot(player.x - this.x, player.y - this.y);
+        
+        if (distToPlayer < 65) {
+            player.takeDamage(20);
+            for (let i = 0; i < 8; i++) {
+                particles.push(new Particle(player.x + 16, player.y + 25, "#ef4444"));
+            }
+        }
+    }
+
+    takeDamage(amount, direction, particles) {
+        this.health -= amount;
+        this.vx = direction * 8;
+        this.vy = -3;
+
+        for (let i = 0; i < 10; i++) {
+            particles.push(new Particle(this.x + 16, this.y + 20, "#e2e8f0"));
+        }
+
+        if (this.health <= 0) {
+            this.active = false;
+        }
+    }
+
+    draw(ctx, camera) {
+        if (!this.active) return;
+        const screenX = this.x - camera.x;
+        const screenY = this.y - camera.y;
+
+        ctx.save();
+        ctx.translate(screenX + this.width / 2, screenY + this.height / 2);
+        if (!this.facingRight) ctx.scale(-1, 1);
+
+        // Body (Green Thug Visuals)
+        ctx.fillStyle = this.state === "STUNNED" ? "#cbd5e1" : "#15803d";
+        ctx.fillRect(-12, -25, 24, 50);
+
+        // Head
+        ctx.fillStyle = "#fde047";
+        ctx.fillRect(-8, -38, 16, 14);
+
+        ctx.restore();
+
+        // Stunned Web Graphics Overlay
+        if (this.state === "STUNNED") {
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(screenX, screenY);
+            ctx.lineTo(screenX + this.width, screenY + this.height);
+            ctx.moveTo(screenX + this.width, screenY);
+            ctx.lineTo(screenX, screenY + this.height);
+            ctx.stroke();
+        }
+
+        // Enemy Health Bar
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(screenX - 5, screenY - 15, 42, 6);
+        ctx.fillStyle = "#ef4444";
+        ctx.fillRect(screenX - 5, screenY - 15, (this.health / this.maxHealth) * 42, 6);
+    }
+}
+
+// ============================================================================
+// HUD / USER INTERFACE RENDERER
+// ============================================================================
+function drawHUD(ctx, player) {
+    // --- HEALTH BAR ---
+    ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+    ctx.fillRect(20, 20, 220, 22);
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(22, 22, (player.health / player.maxHealth) * 216, 18);
+    
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillText("HEALTH", 28, 35);
+
+    // --- WEB FLUID METER ---
+    ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+    ctx.fillRect(20, 48, 180, 14);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fillRect(22, 50, (player.webFluid / player.maxWebFluid) * 176, 10);
+    
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 10px sans-serif";
+    ctx.fillText("WEB FLUID", 28, 59);
+
+    // --- COMBO COUNTER ---
+    if (player.comboCount > 1) {
+        ctx.fillStyle = "#f59e0b";
+        ctx.font = "italic italic bold 28px sans-serif";
+        ctx.fillText(`${player.comboCount}x COMBO!`, 20, 105);
+    }
+
+    // --- GAME OVER SCREEN ---
+    if (player.health <= 0) {
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "#ef4444";
+        ctx.font = "bold 48px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 20);
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "20px sans-serif";
+        ctx.fillText("Press 'R' to Respawn", canvas.width / 2, canvas.height / 2 + 30);
+        ctx.textAlign = "left";
+    }
+}
+
+// ============================================================================
+// INITIALIZATION & MAIN GAME LOOP
+// ============================================================================
+const city = new CityGenerator();
+const camera = new Camera();
+const player = new Player(100, 100);
+let enemies = [];
+let projectiles = [];
+let particles = [];
+
+// Spawn Initial Enemies
+function spawnEnemies() {
+    for (let b of city.buildings) {
+        if (b.x > 500 && Math.random() > 0.4) {
+            enemies.push(new Enemy(b.x + b.width / 2, b.y - 60));
+        }
+    }
+}
+spawnEnemies();
+
+// Respawn Key
+window.addEventListener("keydown", (e) => {
+    if (e.code === "KeyR" && player.health <= 0) {
+        player.health = 100;
+        player.webFluid = 100;
+        player.x = 100;
+        player.y = 100;
+        player.vx = 0;
+        player.vy = 0;
+        enemies = [];
+        spawnEnemies();
+    }
+});
+
+function gameLoop() {
+    // Clear Screen
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (player.health > 0) {
+        // Update Game Objects
+        player.update(city, enemies, particles);
+        camera.update(player, player.facingRight);
+        city.update(camera);
+
+        // Update Projectiles
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            let p = projectiles[i];
+            p.update();
+
+            // Collision with enemies
+            for (let e of enemies) {
+                if (e.active && player.checkAABB({ x: p.x - p.radius, y: p.y - p.radius, width: p.radius * 2, height: p.radius * 2 }, e)) {
+                    e.stunTimer = 180; // 3 seconds stun
+                    p.active = false;
+                }
+            }
+
+            if (!p.active || Math.abs(p.x - player.x) > 1000) {
+                projectiles.splice(i, 1);
+            }
+        }
+
+        // Update Enemies
+        for (let e of enemies) {
+            e.update(player, city, particles);
+        }
+
+        // Update Particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+            particles[i].update();
+            if (particles[i].life <= 0) particles.splice(i, 1);
+        }
+    }
+
+    // Render Scene Layers
+    city.draw(ctx, camera);
+
+    for (let p of projectiles) p.draw(ctx, camera);
+    for (let e of enemies) e.draw(ctx, camera);
+    player.draw(ctx, camera);
+    for (let pt of particles) pt.draw(ctx, camera);
+
+    // Draw UI Overlay
+    drawHUD(ctx, player);
+
+    requestAnimationFrame(gameLoop);
+}
+
+// Start Game Engine
+requestAnimationFrame(gameLoop);
+
+</script>
+</body>
+</html>
